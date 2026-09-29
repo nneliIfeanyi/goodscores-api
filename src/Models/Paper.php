@@ -79,6 +79,20 @@ class Paper
         return $stmt->fetchAll();
     }
 
+    public static function listForRestore(int $userId): array
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('SELECT id FROM exam_papers WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC');
+        $stmt->execute([$userId]);
+
+        $papers = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            $paper = self::findById((int)$id, $userId);
+            if ($paper) $papers[] = $paper;
+        }
+        return $papers;
+    }
+
     public static function create(array $data): int
     {
         $db = Database::getInstance();

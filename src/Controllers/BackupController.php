@@ -8,6 +8,7 @@ use App\Helpers\Response;
 use App\Middleware\Auth;
 use App\Models\Meta;
 use App\Models\Passage;
+use App\Models\Paper;
 use App\Models\Question;
 use App\Models\User;
 use App\Services\AiQuestionService;
@@ -24,6 +25,17 @@ class BackupController
             'count' => count($questions),
             'restored_at' => gmdate('c'),
         ], 'Question bank ready to restore');
+    }
+
+    public function restorePapers(): void
+    {
+        $auth = Auth::requireAuth();
+        $papers = Paper::listForRestore((int)$auth['sub']);
+        Response::success([
+            'papers' => $papers,
+            'count' => count($papers),
+            'restored_at' => gmdate('c'),
+        ], 'Exam papers ready to restore');
     }
 
     public function questions(): void

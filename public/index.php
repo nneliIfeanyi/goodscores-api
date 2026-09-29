@@ -108,6 +108,7 @@ $routes = [
     'POST /ai/questions/generate' => ['App\Controllers\AiController', 'generateQuestions'],
     'POST /ai/diagram/generate' => ['App\Controllers\AiController', 'generateDiagram'],
     'GET /backup/questions'       => ['App\Controllers\BackupController', 'restoreQuestions'],
+    'GET /backup/papers'          => ['App\Controllers\BackupController', 'restorePapers'],
     'POST /backup/questions'      => ['App\Controllers\BackupController', 'questions'],
     'GET /backup/status'          => ['App\Controllers\BackupController', 'status'],
 ];
