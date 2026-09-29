@@ -377,11 +377,14 @@ class AuthController
         if (!in_array($fontFamily, $allowedFamilies, true)) {
             Response::error('Unsupported PDF font style');
         }
-        if (!empty($user['school_id'])) {
+        $isSchoolAdmin = $user['role'] === 'school_admin' && !empty($user['school_id']);
+        if (!empty($user['school_id']) && !$isSchoolAdmin) {
             Response::error('PDF settings are controlled by your school administrator', 403);
         }
 
         $settings = is_array($input['pdf_settings'] ?? null) ? $input['pdf_settings'] : [];
+        $settings['paper_format'] = in_array(($settings['paper_format'] ?? 'columns'), ['columns', 'inline_options'], true)
+            ? $settings['paper_format'] : 'columns';
         $settings['paper_size'] = in_array(strtoupper((string)($settings['paper_size'] ?? 'A4')), ['A4', 'LETTER', 'LEGAL'], true)
             ? strtoupper((string)$settings['paper_size']) : 'A4';
         $settings['orientation'] = in_array(($settings['orientation'] ?? 'portrait'), ['portrait', 'landscape'], true)
@@ -404,8 +407,11 @@ class AuthController
         $settings['pdf_font_size'] = $fontSize;
         $settings['pdf_font_family'] = $fontFamily;
         $settings['show_marks'] = $showMarks === null ? true : $showMarks;
-        if (!User::updatePdfSettings((int)$auth['sub'], $fontSize, $fontFamily, $settings['show_marks'])
-            || !User::updatePdfPreferences((int)$auth['sub'], $settings)) {
+        $saved = $isSchoolAdmin
+            ? School::updatePaperSettings((int)$user['school_id'], $settings)
+            : User::updatePdfSettings((int)$auth['sub'], $fontSize, $fontFamily, $settings['show_marks'])
+                && User::updatePdfPreferences((int)$auth['sub'], $settings);
+        if (!$saved) {
             Response::error('Could not save PDF settings', 500);
         }
         Response::success([

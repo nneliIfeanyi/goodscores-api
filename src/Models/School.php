@@ -57,6 +57,7 @@ class School
     public static function defaultPaperSettings(): array
     {
         return [
+            'paper_format' => 'columns',
             'paper_size' => 'A4',
             'orientation' => 'portrait',
             'margin_top' => 20,
@@ -69,6 +70,17 @@ class School
             'show_marks' => true,
             'footer_text' => 'End of Paper',
         ];
+    }
+
+    public static function updatePaperSettings(int $schoolId, array $settings): bool
+    {
+        $school = self::findById($schoolId);
+        if (!$school) return false;
+        $current = json_decode($school['paper_settings'] ?? '{}', true) ?: [];
+        $merged = array_merge(self::defaultPaperSettings(), $current, $settings);
+        $db = Database::getInstance();
+        $stmt = $db->prepare('UPDATE schools SET paper_settings = ? WHERE id = ?');
+        return $stmt->execute([json_encode($merged), $schoolId]);
     }
 
     public static function updateCredits(int $schoolId, int $balance): bool

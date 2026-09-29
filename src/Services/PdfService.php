@@ -26,7 +26,7 @@ class PdfService
         $schoolSettings = $school ? (json_decode($school['paper_settings'] ?? '{}', true) ?: []) : [];
         $userSettings = json_decode($user['pdf_settings'] ?? '{}', true) ?: [];
         $preferenceKeys = [
-          'paper_size', 'orientation', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
+          'paper_format', 'paper_size', 'orientation', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
           'header_height', 'show_logo', 'show_school_name', 'footer_text', 'show_marks',
           'pdf_font_size', 'pdf_font_family',
         ];
@@ -172,13 +172,21 @@ class PdfService
 
             $opts = '';
             if (($q['type'] ?? '') === 'mcq' && !empty($q['options'])) {
+              $optionItems = [];
+              foreach ($q['options'] as $o) {
+                $key = htmlspecialchars($o['key'] ?? '');
+                $text = htmlspecialchars($o['text'] ?? '');
+                $optionItems[] = "<span class=\"inline-option\"><strong>{$key}.</strong> {$text}</span>";
+              }
+              if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
+                $opts = '<span class="inline-options">' . "\t" . implode('', $optionItems) . '</span>';
+              } else {
                 $opts = '<div style="margin:5px 0 0 18px;font-size:9pt;line-height:1.25;">';
-                foreach ($q['options'] as $o) {
-                    $key = htmlspecialchars($o['key'] ?? '');
-                    $text = htmlspecialchars($o['text'] ?? '');
-                    $opts .= "<div style=\"margin-bottom:3px;\"><strong>{$key}.</strong> {$text}</div>";
+                foreach ($optionItems as $optionItem) {
+                  $opts .= '<div style="margin-bottom:3px;">' . $optionItem . '</div>';
                 }
                 $opts .= '</div>';
+              }
             }
 
             $images = '';
@@ -222,10 +230,17 @@ class PdfService
           $leftCount = (int)ceil($columnCount / 2);
           $leftBlocks = array_slice($sectionQuestionBlocks, 0, $leftCount);
           $rightBlocks = array_slice($sectionQuestionBlocks, $leftCount);
-          $questionsHtml .= '<table class="section-question-columns" width="100%"><tr>'
-            . '<td class="question-column">' . implode('', $leftBlocks) . '</td>'
-            . '<td class="question-column">' . implode('', $rightBlocks) . '</td>'
-            . '</tr></table></div>';
+          if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
+            $questionsHtml .= '<table class="section-question-columns" width="100%"><tr>'
+              . '<td class="question-column">' . implode('', $leftBlocks) . '</td>'
+              . '<td class="question-column">' . implode('', $rightBlocks) . '</td>'
+              . '</tr></table></div>';
+          } else {
+            $questionsHtml .= '<table class="section-question-columns" width="100%"><tr>'
+              . '<td class="question-column">' . implode('', $leftBlocks) . '</td>'
+              . '<td class="question-column">' . implode('', $rightBlocks) . '</td>'
+              . '</tr></table></div>';
+          }
         }
 
         if (!$showMarks) {
@@ -282,6 +297,8 @@ class PdfService
   .section-instructions { text-align: center; font-style: italic; margin-bottom: 5px; }
   .section-question-columns { border-collapse: separate; border-spacing: 18px 0; margin: 0 -18px; }
   .question-column { width: 50%; vertical-align: top; }
+  .inline-options { white-space: pre-wrap; tab-size: 4; }
+  .inline-option { display: inline; margin-right: 1.5em; }
   .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8pt; color: #888; border-top: 1px solid #ddd; padding-top: 4px; }
 </style>
 </head>
