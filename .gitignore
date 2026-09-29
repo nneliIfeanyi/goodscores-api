@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+/vendor/
+
+# Logs and runtime files
+*.log
+/logs/
+/tmp/
+/cache/
+
+# User-uploaded/generated files
+/uploads/*
+/storage/*
+!/uploads/.gitkeep
+!/storage/.gitkeep
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local configuration
+phpunit.xml
