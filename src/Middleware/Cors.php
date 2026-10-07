@@ -15,8 +15,9 @@ class Cors
             str_contains($origin, 'localhost') ||
             str_contains($origin, '127.0.0.1')
         );
+        $isLocalFile = ($_ENV['APP_ENV'] ?? 'local') !== 'production' && $origin === 'null';
 
-        if ($allowed === '*' || in_array($origin, $origins, true) || $isLocal) {
+        if ($allowed === '*' || in_array($origin, $origins, true) || $isLocal || $isLocalFile) {
             header('Access-Control-Allow-Origin: ' . ($origin !== '' ? $origin : '*'));
             header('Vary: Origin');
         }

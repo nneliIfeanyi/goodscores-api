@@ -13,8 +13,6 @@ class OcrController
     public function extract(): void
     {
         $auth = Auth::requireAuth();
-        \App\Middleware\RateLimit::attemptAiOcrBurst((string)$auth['sub']);
-        \App\Middleware\RateLimit::attempt('ocr', 10, 600, (string)$auth['sub']);
 
         $user = User::findById((int)$auth['sub']);
         if (!$user) {
@@ -33,13 +31,23 @@ class OcrController
             Response::error('image (base64) is required');
         }
 
+        $usageToken = \App\Middleware\RateLimit::reserveDaily('ocr', (string)$auth['sub'], 5);
+
         $result = OcrService::extractText($image);
         if (!$result['success']) {
+            \App\Middleware\RateLimit::release('ocr', (string)$auth['sub'], $usageToken);
             Response::error($result['error'] ?? 'OCR failed', 502);
         }
+        \App\Middleware\RateLimit::complete('ocr', (string)$auth['sub'], $usageToken);
 
         // Deduct only after successful OCR
-        $deduct = CreditService::deductFor($user, 'ocr', $cost, 'OCR text extraction', 'ocr');
+        $deduct = CreditService::deductFor(
+            $user,
+            'ocr',
+            $cost,
+            'OCR text extraction',
+            'ocr_' . bin2hex(random_bytes(16))
+        );
         if (!$deduct['success']) {
             Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
         }

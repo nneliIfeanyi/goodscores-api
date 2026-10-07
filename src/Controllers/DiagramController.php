@@ -175,13 +175,17 @@ class DiagramController
             if (!CreditService::canAffordFor($user, 'ai', $cost)) {
                 Response::error('Insufficient credits for illustration generation (need ' . $cost . ')', 402);
             }
+            $usageToken = \App\Middleware\RateLimit::reserveDaily('diagram_illustration', (string)$userId, 5);
             $preview = AiImageService::generatePreview($spec);
             if (!$preview['success']) {
+                \App\Middleware\RateLimit::release('diagram_illustration', (string)$userId, $usageToken);
                 Response::error($preview['error'] ?? 'Could not generate illustration', $preview['status'] ?? 502);
             }
+            \App\Middleware\RateLimit::complete('diagram_illustration', (string)$userId, $usageToken);
             $saved = $this->saveUploadedImage($preview['data_url'], $userId);
             $deduct = CreditService::deductFor($user, 'ai', $cost, 'Diagram library illustration', 'diagram_illustration_' . bin2hex(random_bytes(16)));
             if (!$deduct['success']) {
+                $this->deleteStoredImage($saved['relative'], $userId);
                 Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
             }
 

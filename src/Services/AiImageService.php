@@ -99,7 +99,7 @@ class AiImageService
             . substr($prompt, 0, 1200);
 
         $payload = [
-            'model' => $_ENV['OPENAI_IMAGE_MODEL'] ?? 'gpt-image-2',
+            'model' => 'gpt-image-2',
             'prompt' => $prompt,
             'size' => '1024x1024',
             'quality' => 'low',

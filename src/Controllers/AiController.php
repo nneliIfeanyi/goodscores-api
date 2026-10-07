@@ -19,7 +19,6 @@ class AiController
     public function generateQuestions(): void
     {
         $auth = Auth::requireAuth();
-        RateLimit::attemptAiOcrBurst((string)$auth['sub']);
 
         $user = User::findById((int)$auth['sub']);
         if (!$user) {
@@ -81,6 +80,8 @@ class AiController
             Response::error('Subject, class, and term are required');
         }
 
+        $usageToken = RateLimit::reserveAskAi((string)$auth['sub']);
+
         $result = AiQuestionService::generate([
             'count' => $count,
             'type' => $type,
@@ -94,8 +95,10 @@ class AiController
             'term_name' => $termName,
         ]);
         if (!$result['success']) {
+            RateLimit::release('ask_ai', (string)$auth['sub'], $usageToken);
             Response::error($result['error'], $result['status'] ?? 502);
         }
+        RateLimit::complete('ask_ai', (string)$auth['sub'], $usageToken);
 
         $deduct = CreditService::deductFor(
             $user,
@@ -180,10 +183,13 @@ class AiController
         }
 
         if ($isIllustration) {
+            $usageToken = RateLimit::reserveDaily('diagram_illustration', (string)$auth['sub'], 5);
             $preview = AiImageService::generatePreview($spec);
             if (!$preview['success']) {
+                RateLimit::release('diagram_illustration', (string)$auth['sub'], $usageToken);
                 Response::error($preview['error'] ?? 'Could not generate illustration', $preview['status'] ?? 502);
             }
+            RateLimit::complete('diagram_illustration', (string)$auth['sub'], $usageToken);
             $deduct = CreditService::deductFor($user, 'ai', $cost, 'AI educational illustration draft', 'ai_illustration_preview_' . bin2hex(random_bytes(16)));
             if (!$deduct['success']) Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
             Response::success([

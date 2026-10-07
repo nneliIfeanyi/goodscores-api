@@ -333,10 +333,19 @@ class QuestionController
         if (!CreditService::canAfford($user, $cost)) {
             Response::error('Insufficient credits for illustration (need ' . $cost . ')', 402);
         }
+        $usageToken = \App\Middleware\RateLimit::reserveDaily('diagram_illustration', (string)$auth['sub'], 5);
         $generated = AiImageService::generateAndStore($question, $spec, $id);
-        if (!$generated['success']) Response::error($generated['error'], $generated['status'] ?? 502);
-        $deduct = CreditService::deduct($user, $cost, 'AI educational illustration', 'ai_image_' . $id);
-        if (!$deduct['success']) Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
+        if (!$generated['success']) {
+            \App\Middleware\RateLimit::release('diagram_illustration', (string)$auth['sub'], $usageToken);
+            Response::error($generated['error'], $generated['status'] ?? 502);
+        }
+        \App\Middleware\RateLimit::complete('diagram_illustration', (string)$auth['sub'], $usageToken);
+        $deduct = CreditService::deductFor($user, 'ai', $cost, 'AI educational illustration', 'ai_image_' . $id . '_' . bin2hex(random_bytes(16)));
+        if (!$deduct['success']) {
+            Question::deleteImage((int)$generated['image']['id'], (int)$auth['sub']);
+            @unlink(__DIR__ . '/../../storage/' . ltrim($generated['image']['file_path'], '/'));
+            Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
+        }
         Response::success(array_merge($generated['image'], [
             'cost' => $cost,
             'credits_left' => $deduct['new_balance'],
