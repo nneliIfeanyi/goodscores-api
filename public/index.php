@@ -98,6 +98,8 @@ $routes = [
 
     'GET /questions'            => ['App\Controllers\QuestionController', 'index'],
     'POST /questions'           => ['App\Controllers\QuestionController', 'store'],
+    'GET /diagrams'             => ['App\Controllers\DiagramController', 'index'],
+    'POST /diagrams'            => ['App\Controllers\DiagramController', 'store'],
         'GET /passages'             => ['App\Controllers\PassageController', 'index'],
         'POST /passages'            => ['App\Controllers\PassageController', 'store'],
 
@@ -120,6 +122,8 @@ $paramRoutes = [
     ['DELETE', '#^/questions/(\d+)$#',           'App\Controllers\QuestionController', 'destroy'],
     ['POST',   '#^/questions/(\d+)/images$#',    'App\Controllers\QuestionController', 'uploadImage'],
     ['POST',   '#^/questions/(\d+)/generate-illustration$#', 'App\Controllers\QuestionController', 'generateIllustration'],
+    ['PUT',    '#^/diagrams/(\d+)$#',            'App\Controllers\DiagramController', 'update'],
+    ['DELETE', '#^/diagrams/(\d+)$#',            'App\Controllers\DiagramController', 'destroy'],
     ['PUT',    '#^/meta/subjects/(\d+)$#',       'App\Controllers\MetaController', 'updateSubject'],
     ['DELETE', '#^/meta/subjects/(\d+)$#',       'App\Controllers\MetaController', 'deleteSubject'],
     ['PUT',    '#^/meta/classes/(\d+)$#',        'App\Controllers\MetaController', 'updateClass'],

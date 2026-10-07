@@ -6,7 +6,7 @@ use App\Models\User;
 use App\Models\School;
 
 /**
- * Central feature gating: OCR, PDF, offline, Pro Plus headers.
+ * Central feature gating: OCR, offline, Pro Plus headers.
  */
 class FeatureService
 {
@@ -42,16 +42,15 @@ class FeatureService
 
         $canAi = CreditService::canAffordFor($user, 'ai', (int)($_ENV['AI_CREDIT_COST'] ?? 35));
         $canOcr = CreditService::canAffordFor($user, 'ocr', (int)($_ENV['OCR_CREDIT_COST'] ?? CreditService::OCR_COST));
-        $canPdf = CreditService::canAffordFor($user, 'export', (int)($_ENV['PDF_EXPORT_CREDIT_COST'] ?? CreditService::PDF_COST));
+        $canPdf = true;
 
-        // Manual question drafting is available offline to every account. Server-backed
-        // features such as OCR, AI, and PDF export still require connectivity.
+        // Manual question drafting and paper output are available to every account.
+        // OCR and AI still require connectivity and credits.
         $offlineOk = true;
 
         // School teachers blocked when pool dead
         if (!empty($user['school_id']) && !$credits['can_use_pro'] && !$credits['is_unlimited']) {
             $canOcr = false;
-            $canPdf = false;
             // offline for school follows school health lightly
         }
 

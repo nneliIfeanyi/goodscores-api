@@ -7,6 +7,7 @@ use App\Middleware\Auth;
 use App\Middleware\RateLimit;
 use App\Models\User;
 use App\Services\CreditService;
+use App\Services\AiImageService;
 use App\Services\AiQuestionService;
 use App\Services\UsageService;
 
@@ -134,14 +135,77 @@ class AiController
         $auth = Auth::requireAuth();
         $user = User::findById((int)$auth['sub']);
         if (!$user) Response::error('User not found', 404);
+
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
-        $cost = (int)($_ENV['AI_DIAGRAM_CREDIT_COST'] ?? 10);
-        if (!CreditService::canAffordFor($user, 'ai', $cost)) Response::error('Insufficient credits for diagram generation (need ' . $cost . ')', 402);
-        $result = AiQuestionService::generateDiagram((string)($input['description'] ?? ''), (string)($input['type'] ?? ''));
-        if (!$result['success']) Response::error($result['error'], $result['status'] ?? 502);
+        $description = trim((string)($input['description'] ?? ''));
+        $requestedType = trim((string)($input['type'] ?? 'auto'));
+        if ($description === '') {
+            Response::error('A diagram prompt is required');
+        }
+
+        $spec = null;
+        if ($requestedType === 'precise_diagram') {
+            $svg = AiQuestionService::generateDiagram($description, 'precise_diagram');
+            if (!$svg['success']) Response::error($svg['error'], $svg['status'] ?? 502);
+            $spec = [
+                'type' => 'precise_diagram',
+                'description' => $svg['description'] ?? $description,
+                'labels' => [],
+                'svg' => $svg['svg'],
+                'image_prompt' => '',
+            ];
+        } elseif ($requestedType === 'illustration') {
+            $spec = [
+                'type' => 'illustration',
+                'description' => $description,
+                'labels' => [],
+                'svg' => '',
+                'image_prompt' => $description,
+            ];
+        } else {
+            $resolved = AiQuestionService::resolveDiagramSpec($description);
+            if (!$resolved['success']) Response::error($resolved['error'], $resolved['status'] ?? 502);
+            $spec = $resolved['spec'];
+            if ($spec['type'] === 'precise_diagram' && ($spec['svg'] ?? '') === '') {
+                $svg = AiQuestionService::generateDiagram($spec['description'] ?? $description, 'precise_diagram');
+                if (!$svg['success']) Response::error($svg['error'], $svg['status'] ?? 502);
+                $spec['svg'] = $svg['svg'];
+            }
+        }
+
+        $isIllustration = ($spec['type'] ?? '') === 'illustration';
+        $cost = (int)($_ENV[$isIllustration ? 'AI_IMAGE_CREDIT_COST' : 'AI_DIAGRAM_CREDIT_COST'] ?? ($isIllustration ? 50 : 10));
+        if (!CreditService::canAffordFor($user, 'ai', $cost)) {
+            Response::error('Insufficient credits for diagram generation (need ' . $cost . ')', 402);
+        }
+
+        if ($isIllustration) {
+            $preview = AiImageService::generatePreview($spec);
+            if (!$preview['success']) {
+                Response::error($preview['error'] ?? 'Could not generate illustration', $preview['status'] ?? 502);
+            }
+            $deduct = CreditService::deductFor($user, 'ai', $cost, 'AI educational illustration draft', 'ai_illustration_preview_' . bin2hex(random_bytes(16)));
+            if (!$deduct['success']) Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
+            Response::success([
+                'type' => 'illustration',
+                'description' => $spec['description'],
+                'image_prompt' => $spec['image_prompt'],
+                'image_data_url' => $preview['data_url'],
+                'mime_type' => $preview['mime_type'],
+                'cost' => $cost,
+                'credits_left' => $deduct['new_balance'],
+            ], 'Illustration generated');
+        }
+
         $deduct = CreditService::deductFor($user, 'ai', $cost, 'AI SVG diagram generation', 'ai_diagram_' . bin2hex(random_bytes(16)));
         if (!$deduct['success']) Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
-        Response::success(['type' => 'precise_diagram', 'description' => $result['description'], 'svg' => $result['svg'], 'cost' => $cost, 'credits_left' => $deduct['new_balance']], 'Diagram generated');
+        Response::success([
+            'type' => 'precise_diagram',
+            'description' => $spec['description'],
+            'svg' => $spec['svg'],
+            'cost' => $cost,
+            'credits_left' => $deduct['new_balance'],
+        ], 'Diagram generated');
     }
 
 }

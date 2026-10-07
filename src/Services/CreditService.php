@@ -10,7 +10,7 @@ use PDO;
 class CreditService
 {
     public const OCR_COST = 35;
-    public const PDF_COST = 95;
+    public const PDF_COST = 0;
     public const OFFLINE_MIN = 200;
 
     public static function getUserEffectiveCredits(array $user): array

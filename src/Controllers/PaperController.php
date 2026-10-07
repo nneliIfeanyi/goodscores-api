@@ -176,7 +176,6 @@ class PaperController
 
     /**
      * Export paper to PDF (or printable HTML fallback).
-     * Requires online access + credits. Deducts PDF cost on success.
      */
     public function export(int $id): void
     {
@@ -196,19 +195,9 @@ class PaperController
             Response::error('Paper has no questions to export');
         }
 
-        $cost = (int)($_ENV['PDF_EXPORT_CREDIT_COST'] ?? \App\Services\CreditService::PDF_COST);
-        if (!\App\Services\CreditService::canAffordFor($user, 'export', $cost)) {
-            Response::error('Insufficient credits for PDF export (need ' . $cost . ')', 402);
-        }
-
         $result = \App\Services\PdfService::renderPdf($paper, $user);
         if (!$result['success']) {
             Response::error($result['error'] ?? 'PDF export failed', 500);
-        }
-
-        $deduct = \App\Services\CreditService::deductFor($user, 'export', $cost, 'PDF export: ' . ($paper['title'] ?? $id), 'pdf_' . $id);
-        if (!$deduct['success']) {
-            Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
         }
 
         $user = User::findById((int)$auth['sub']);
@@ -216,7 +205,7 @@ class PaperController
 
         \App\Services\UsageService::log((int)$auth['sub'], 'pdf_export', [
             'paper_id' => $id,
-            'cost'     => $cost,
+            'cost'     => 0,
             'fallback' => !empty($result['fallback']),
         ]);
 
@@ -226,7 +215,7 @@ class PaperController
             'fallback'     => !empty($result['fallback']),
             'message'      => $result['message'] ?? 'PDF ready',
             'credits_left' => $credits['balance'],
-            'cost'         => $cost,
+            'cost'         => 0,
         ], 'Export complete');
     }
 }

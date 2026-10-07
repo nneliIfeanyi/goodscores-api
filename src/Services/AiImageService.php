@@ -10,6 +10,67 @@ class AiImageService
 {
     public static function generateAndStore(array $question, array $spec, int $questionId): array
     {
+        $rawResult = self::generateRaw($spec);
+        if (!$rawResult['success']) {
+            return $rawResult;
+        }
+        $raw = $rawResult['raw'];
+        $processed = self::processImage($raw);
+        if (!$processed['success']) return $processed;
+
+        $directory = __DIR__ . '/../../storage/uploads/questions/' . $questionId;
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            return ['success' => false, 'status' => 500, 'error' => 'Could not create image storage directory'];
+        }
+        $filename = 'ai_illustration_' . bin2hex(random_bytes(12)) . '.webp';
+        $fullPath = $directory . '/' . $filename;
+        if (file_put_contents($fullPath, $processed['data']) === false) {
+            return ['success' => false, 'status' => 500, 'error' => 'Could not save generated illustration'];
+        }
+
+        $relative = 'uploads/questions/' . $questionId . '/' . $filename;
+        $imageId = \App\Models\Question::addImage($questionId, [
+            'file_path' => $relative,
+            'original_name' => $filename,
+            'mime_type' => 'image/webp',
+            'file_size' => strlen($processed['data']),
+            'type' => 'ai_illustration',
+            'position' => 'after_body',
+            'caption' => $spec['description'],
+            'sort_order' => 0,
+        ]);
+
+        return [
+            'success' => true,
+            'image' => [
+                'id' => $imageId,
+                'file_path' => $relative,
+                'url' => '/storage/' . $relative,
+                'mime_type' => 'image/webp',
+            ],
+        ];
+    }
+
+    public static function generatePreview(array $spec): array
+    {
+        $rawResult = self::generateRaw($spec);
+        if (!$rawResult['success']) {
+            return $rawResult;
+        }
+        $processed = self::processImage($rawResult['raw']);
+        if (!$processed['success']) {
+            return $processed;
+        }
+
+        return [
+            'success' => true,
+            'mime_type' => 'image/webp',
+            'data_url' => 'data:image/webp;base64,' . base64_encode($processed['data']),
+        ];
+    }
+
+    private static function generateRaw(array $spec): array
+    {
         if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp')) {
             return ['success' => false, 'status' => 503, 'error' => 'Server image processing is not available. Enable the PHP GD extension.'];
         }
@@ -23,9 +84,18 @@ class AiImageService
         if ($prompt === '') {
             return ['success' => false, 'status' => 422, 'error' => 'An illustration prompt is required.'];
         }
+        $audienceProfile = trim((string)($spec['audience_profile'] ?? ''));
+        $audienceInstruction = match ($audienceProfile) {
+            'early_learners' => 'Keep shapes simple and friendly, avoid clutter, and use warm child-safe classroom visuals for ages 5-8.',
+            'upper_primary' => 'Use clear educational visuals for ages 9-11 with moderate detail and easy recognition.',
+            'junior_secondary' => 'Use accurate but approachable school-level detail for junior secondary learners.',
+            'senior_secondary' => 'Use higher academic detail suitable for senior secondary learners while staying clean and readable.',
+            default => 'Use a balanced classroom-appropriate detail level for mixed learners.',
+        };
         $prompt = 'Create a clear, age-appropriate educational illustration for a school question. '
             . 'Do not include labels, written answers, mathematical notation, measurements, graphs, or exact geometry. '
             . 'Use a clean light background and make the requested subject easy for learners to recognize. '
+            . $audienceInstruction . ' '
             . substr($prompt, 0, 1200);
 
         $payload = [
@@ -64,41 +134,7 @@ class AiImageService
         if ($raw === false || $raw === '') {
             return ['success' => false, 'status' => 502, 'error' => 'Image service returned no usable image'];
         }
-
-        $processed = self::processImage($raw);
-        if (!$processed['success']) return $processed;
-
-        $directory = __DIR__ . '/../../storage/uploads/questions/' . $questionId;
-        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-            return ['success' => false, 'status' => 500, 'error' => 'Could not create image storage directory'];
-        }
-        $filename = 'ai_illustration_' . bin2hex(random_bytes(12)) . '.webp';
-        $fullPath = $directory . '/' . $filename;
-        if (file_put_contents($fullPath, $processed['data']) === false) {
-            return ['success' => false, 'status' => 500, 'error' => 'Could not save generated illustration'];
-        }
-
-        $relative = 'uploads/questions/' . $questionId . '/' . $filename;
-        $imageId = \App\Models\Question::addImage($questionId, [
-            'file_path' => $relative,
-            'original_name' => $filename,
-            'mime_type' => 'image/webp',
-            'file_size' => strlen($processed['data']),
-            'type' => 'ai_illustration',
-            'position' => 'after_body',
-            'caption' => $spec['description'],
-            'sort_order' => 0,
-        ]);
-
-        return [
-            'success' => true,
-            'image' => [
-                'id' => $imageId,
-                'file_path' => $relative,
-                'url' => '/storage/' . $relative,
-                'mime_type' => 'image/webp',
-            ],
-        ];
+        return ['success' => true, 'raw' => $raw];
     }
 
     private static function processImage(string $raw): array

@@ -45,18 +45,21 @@ class CreditController
         Response::success(CreditService::transactions($user));
     }
 
-        public function authorizeExport(): void
-        {
-            $auth = Auth::requireAuth();
-            $user = User::findById((int)$auth['sub']);
-            $input = json_decode(file_get_contents('php://input'), true) ?? [];
-            $reference = trim((string)($input['client_reference_id'] ?? ''));
-            if ($reference === '' || strlen($reference) > 100) Response::error('A valid export reference is required');
-            $cost = (int)($_ENV['PDF_EXPORT_CREDIT_COST'] ?? CreditService::PDF_COST);
-            $result = CreditService::deductFor($user, 'export', $cost, 'Local paper export', $reference);
-            if (!$result['success']) Response::error($result['message'] ?? 'Export credit authorization failed', 402);
-            Response::success(['authorized' => true, 'cost' => $cost, 'credits_left' => $result['new_balance']], 'Export authorized');
+    public function authorizeExport(): void
+    {
+        $auth = Auth::requireAuth();
+        $user = User::findById((int)$auth['sub']);
+        if (!$user) {
+            Response::error('User not found', 404);
         }
+
+        $credits = CreditService::getUserEffectiveCredits($user);
+        Response::success([
+            'authorized'   => true,
+            'cost'         => 0,
+            'credits_left' => $credits['balance'],
+        ], 'Export authorized');
+    }
 
     public function initializePayment(): void
     {

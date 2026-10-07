@@ -115,6 +115,25 @@ class BackupController
                         'offline_id' => $offlineId,
                     ]));
                 }
+
+                if (!empty($item['images']) && is_array($item['images'])) {
+                    Question::clearImages($serverId);
+                    foreach ($item['images'] as $idx => $img) {
+                        $path = trim((string)($img['file_path'] ?? ''));
+                        if ($path === '') continue;
+                        Question::addImage($serverId, [
+                            'file_path' => ltrim($path, '/'),
+                            'original_name' => $img['original_name'] ?? null,
+                            'mime_type' => $img['mime_type'] ?? null,
+                            'file_size' => isset($img['file_size']) ? (int)$img['file_size'] : null,
+                            'type' => $img['type'] ?? 'diagram',
+                            'position' => $img['position'] ?? 'after_body',
+                            'caption' => $img['caption'] ?? null,
+                            'sort_order' => isset($img['sort_order']) ? (int)$img['sort_order'] : $idx,
+                        ]);
+                    }
+                }
+
                 if (!empty($item['_pending_image'])) {
                     $this->storePendingImage($serverId, $item['_pending_image'], $item['images'][0] ?? []);
                 }

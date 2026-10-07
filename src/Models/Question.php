@@ -243,6 +243,13 @@ class Question
         return (int) $db->lastInsertId();
     }
 
+    public static function clearImages(int $questionId): bool
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('DELETE FROM question_images WHERE question_id = ?');
+        return $stmt->execute([$questionId]);
+    }
+
     public static function deleteImage(int $imageId, int $userId): bool
     {
         $db = Database::getInstance();

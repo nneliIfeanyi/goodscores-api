@@ -23,6 +23,7 @@ class AiQuestionService
         $count = (int)$request['count'];
         $topic = $request['topic'] !== '' ? $request['topic'] : 'age-appropriate topics from the selected subject and class';
         $focus = $request['focus'] !== '' ? $request['focus'] : 'Use clear classroom language and avoid duplicate questions.';
+        $diagramPrompt = trim((string)($request['diagram_prompt'] ?? ''));
         $diagramInstruction = $request['include_diagrams'] === 'no'
             ? 'Do not include diagrams; return diagram_spec as null.'
             : 'Return diagram_spec only where a visual genuinely improves the question. Set type to precise_diagram for exact mathematical or scientific visuals such as geometry, graphs, number lines, fractions, measurements, tables, or labelled shapes. Set type to illustration only for non-precise educational scenes or objects. For precise_diagram, return a self-contained classroom-friendly inline SVG in svg using basic shapes, text labels, and viewBox coordinates; never use scripts, animation, external assets, stylesheets, or foreignObject. For illustration, return svg as an empty string and write a clear image_prompt for an educational illustration. Never use illustration where exact position, scale, angle, quantity, or mathematical notation matters.';
@@ -38,6 +39,7 @@ class AiQuestionService
             . "Difficulty: {$request['difficulty']}\n"
             . "Topic: {$topic}\n"
             . "Teacher focus: {$focus}\n"
+            . ($diagramPrompt !== '' ? "Diagram direction from teacher: {$diagramPrompt}\n" : '')
             . "{$diagramInstruction}\n"
             . ($passageBased
                 ? "Create one original age-appropriate passage or extract for this content type. Return it in the passage object with a suitable title and complete body, then make every question refer to that passage.\n"
@@ -232,6 +234,72 @@ class AiQuestionService
         $result = json_decode($data['output'][0]['content'][0]['text'] ?? '', true);
         $svg = self::sanitizeSvg((string)($result['svg'] ?? ''));
         return $svg === '' ? ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid SVG diagram.'] : ['success' => true, 'description' => $description, 'svg' => $svg];
+    }
+
+    public static function resolveDiagramSpec(string $description): array
+    {
+        $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
+        if ($apiKey === '') {
+            return ['success' => false, 'status' => 503, 'error' => 'AI is not configured yet. Add OPENAI_API_KEY to backend/.env.'];
+        }
+        $description = trim($description);
+        if ($description === '' || mb_strlen($description) > 1200) {
+            return ['success' => false, 'status' => 422, 'error' => 'Enter a diagram prompt of 1,200 characters or fewer.'];
+        }
+
+        $payload = [
+            'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini',
+            'input' => [
+                [
+                    'role' => 'system',
+                    'content' => 'You classify and prepare educational visuals. Decide whether the prompt requires a precise SVG diagram or an educational illustration. Use precise_diagram for mathematically exact visuals (graphs, geometry, measurement, coordinate axes, exact shape relations). Use illustration for conceptual or scene-based visuals where exact geometry is unnecessary. Return strict JSON only. For precise_diagram return a safe inline SVG. For illustration return an image_prompt and leave svg empty.',
+                ],
+                ['role' => 'user', 'content' => "Teacher visual request:\n{$description}"],
+            ],
+            'text' => ['format' => ['type' => 'json_schema', 'name' => 'diagram_spec', 'strict' => true, 'schema' => [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'required' => ['type', 'description', 'labels', 'svg', 'image_prompt'],
+                'properties' => [
+                    'type' => ['type' => 'string', 'enum' => ['precise_diagram', 'illustration']],
+                    'description' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 1200],
+                    'labels' => ['type' => 'array', 'items' => ['type' => 'string'], 'maxItems' => 12],
+                    'svg' => ['type' => 'string'],
+                    'image_prompt' => ['type' => 'string'],
+                ],
+            ]]],
+        ];
+
+        $ch = curl_init('https://api.openai.com/v1/responses');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $apiKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 60,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false) {
+            return ['success' => false, 'status' => 502, 'error' => 'Could not connect to OpenAI: ' . $curlError];
+        }
+        $data = json_decode($response, true);
+        if ($httpCode >= 400) {
+            return ['success' => false, 'status' => 502, 'error' => $data['error']['message'] ?? 'OpenAI request failed'];
+        }
+        $decoded = json_decode($data['output'][0]['content'][0]['text'] ?? '', true);
+        $spec = self::normalizeDiagramSpec($decoded);
+        if (!$spec) {
+            return ['success' => false, 'status' => 502, 'error' => 'AI could not determine a usable diagram output'];
+        }
+        return ['success' => true, 'spec' => $spec];
     }
 
     public static function validateQuestions(array $questions, int $count): array
