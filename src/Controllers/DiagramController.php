@@ -7,7 +7,6 @@ use App\Middleware\Auth;
 use App\Models\Diagram;
 use App\Models\User;
 use App\Services\AiImageService;
-use App\Services\AiQuestionService;
 use App\Services\CreditService;
 
 class DiagramController
@@ -147,12 +146,14 @@ class DiagramController
         $structured = $this->structuredContext($context);
         $requestText = $structured === '' ? $description : $description . "\n\n" . $structured;
 
-        $resolved = AiQuestionService::resolveDiagramSpec($requestText);
-        if (!$resolved['success']) {
-            Response::error($resolved['error'] ?? 'Could not resolve diagram type', $resolved['status'] ?? 502);
-        }
-        $spec = $resolved['spec'];
-        $spec['requested_context'] = $context;
+        $spec = [
+            'type' => 'illustration',
+            'description' => $description,
+            'labels' => [],
+            'svg' => '',
+            'image_prompt' => $requestText,
+            'requested_context' => $context,
+        ];
         if ($context['audience_profile'] !== '') {
             $spec['audience_profile'] = $context['audience_profile'];
         }
@@ -162,104 +163,54 @@ class DiagramController
             Response::error('User not found', 404);
         }
 
-        if (($spec['type'] ?? '') === 'precise_diagram' && ($spec['svg'] ?? '') === '') {
-            $svg = AiQuestionService::generateDiagram($spec['description'] ?? $requestText, 'precise_diagram');
-            if (!$svg['success']) {
-                Response::error($svg['error'] ?? 'Could not generate SVG', $svg['status'] ?? 502);
-            }
-            $spec['svg'] = $svg['svg'];
-        }
-
-        if (($spec['type'] ?? '') === 'illustration') {
-            $cost = (int)($_ENV['AI_IMAGE_CREDIT_COST'] ?? 50);
-            if (!CreditService::canAffordFor($user, 'ai', $cost)) {
-                Response::error('Insufficient credits for illustration generation (need ' . $cost . ')', 402);
-            }
-            $usageToken = \App\Middleware\RateLimit::reserveDaily('diagram_illustration', (string)$userId, 5);
-            $preview = AiImageService::generatePreview($spec);
-            if (!$preview['success']) {
-                \App\Middleware\RateLimit::release('diagram_illustration', (string)$userId, $usageToken);
-                Response::error($preview['error'] ?? 'Could not generate illustration', $preview['status'] ?? 502);
-            }
-            \App\Middleware\RateLimit::complete('diagram_illustration', (string)$userId, $usageToken);
-            $saved = $this->saveUploadedImage($preview['data_url'], $userId);
-            $deduct = CreditService::deductFor($user, 'ai', $cost, 'Diagram library illustration', 'diagram_illustration_' . bin2hex(random_bytes(16)));
-            if (!$deduct['success']) {
-                $this->deleteStoredImage($saved['relative'], $userId);
-                Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
-            }
-
-            $oldPath = $existing['image_path'] ?? null;
-            if ($existing) {
-                Diagram::update((int)$existing['id'], $userId, [
-                    'title' => $title,
-                    'description' => $description,
-                    'mode' => 'illustration',
-                    'source' => 'ai',
-                    'diagram_spec' => $spec,
-                    'image_path' => $saved['relative'],
-                    'mime_type' => $saved['mime_type'],
-                    'file_size' => $saved['file_size'],
-                ]);
-                if ($oldPath && $oldPath !== $saved['relative']) {
-                    $this->deleteStoredImage($oldPath, $userId);
-                }
-                $diagramId = (int)$existing['id'];
-            } else {
-                $diagramId = Diagram::create([
-                    'user_id' => $userId,
-                    'title' => $title,
-                    'description' => $description,
-                    'mode' => 'illustration',
-                    'source' => 'ai',
-                    'diagram_spec' => $spec,
-                    'image_path' => $saved['relative'],
-                    'mime_type' => $saved['mime_type'],
-                    'file_size' => $saved['file_size'],
-                ]);
-            }
-
-            $created = Diagram::findById($diagramId, $userId);
-            return array_merge($created ?? [], ['cost' => $cost, 'credits_left' => $deduct['new_balance']]);
-        }
-
-        $cost = (int)($_ENV['AI_DIAGRAM_CREDIT_COST'] ?? 10);
+        $cost = (int)($_ENV['AI_IMAGE_CREDIT_COST'] ?? 50);
         if (!CreditService::canAffordFor($user, 'ai', $cost)) {
-            Response::error('Insufficient credits for SVG generation (need ' . $cost . ')', 402);
+            Response::error('Insufficient credits for education illustration (need ' . $cost . ')', 402);
         }
-        $deduct = CreditService::deductFor($user, 'ai', $cost, 'Diagram library SVG', 'diagram_svg_' . bin2hex(random_bytes(16)));
+        $usageToken = \App\Middleware\RateLimit::reserveDaily('diagram_illustration', (string)$userId, 5);
+        $preview = AiImageService::generatePreview($spec);
+        if (!$preview['success']) {
+            \App\Middleware\RateLimit::release('diagram_illustration', (string)$userId, $usageToken);
+            Response::error($preview['error'] ?? 'Could not generate education illustration', $preview['status'] ?? 502);
+        }
+        \App\Middleware\RateLimit::complete('diagram_illustration', (string)$userId, $usageToken);
+        $saved = $this->saveUploadedImage($preview['data_url'], $userId);
+        $deduct = CreditService::deductFor($user, 'ai', $cost, 'Diagram library education illustration', 'diagram_illustration_' . bin2hex(random_bytes(16)));
         if (!$deduct['success']) {
+            $this->deleteStoredImage($saved['relative'], $userId);
             Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
         }
 
+        $oldPath = $existing['image_path'] ?? null;
         if ($existing) {
-            if (!empty($existing['image_path'])) {
-                $this->deleteStoredImage((string)$existing['image_path'], $userId);
-            }
             Diagram::update((int)$existing['id'], $userId, [
                 'title' => $title,
                 'description' => $description,
-                'mode' => 'precise_diagram',
+                'mode' => 'illustration',
                 'source' => 'ai',
                 'diagram_spec' => $spec,
-                'image_path' => null,
-                'mime_type' => null,
-                'file_size' => null,
+                'image_path' => $saved['relative'],
+                'mime_type' => $saved['mime_type'],
+                'file_size' => $saved['file_size'],
             ]);
+            if ($oldPath && $oldPath !== $saved['relative']) {
+                $this->deleteStoredImage($oldPath, $userId);
+            }
             $diagramId = (int)$existing['id'];
         } else {
             $diagramId = Diagram::create([
                 'user_id' => $userId,
                 'title' => $title,
                 'description' => $description,
-                'mode' => 'precise_diagram',
+                'mode' => 'illustration',
                 'source' => 'ai',
                 'diagram_spec' => $spec,
-                'image_path' => null,
-                'mime_type' => null,
-                'file_size' => null,
+                'image_path' => $saved['relative'],
+                'mime_type' => $saved['mime_type'],
+                'file_size' => $saved['file_size'],
             ]);
         }
+
         $created = Diagram::findById($diagramId, $userId);
         return array_merge($created ?? [], ['cost' => $cost, 'credits_left' => $deduct['new_balance']]);
     }

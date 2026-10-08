@@ -229,12 +229,15 @@ class AuthController
         if ($frontendUrl === '') {
             Response::error('Password reset email is not configured', 503);
         }
+        $resetPage = preg_match('/\.html$/i', $frontendUrl) ? $frontendUrl : $frontendUrl . '/index.html';
+        $encodedToken = rawurlencode($token);
+        $resetUrl = $resetPage . '?reset_token=' . $encodedToken . '#reset-password';
 
         try {
             MailService::sendPasswordReset(
                 (string)$user['email'],
                 (string)$user['name'],
-                $frontendUrl . '/?reset_token=' . rawurlencode($token)
+                $resetUrl
             );
         } catch (RuntimeException $error) {
             error_log('Password reset email failed: ' . $error->getMessage());
