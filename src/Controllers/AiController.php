@@ -40,8 +40,8 @@ class AiController
         if (mb_strlen($focus) > 500) {
             Response::error('Additional instructions must be 500 characters or fewer');
         }
-        if (mb_strlen($topic) > 120) {
-            Response::error('Topic must be 120 characters or fewer');
+        if (mb_strlen($topic) > 500) {
+            Response::error('Topics and educational focus must be 500 characters or fewer');
         }
 
         $types = $input['type'] ?? ['mcq'];
