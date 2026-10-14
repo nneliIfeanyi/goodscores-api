@@ -41,7 +41,7 @@ class OcrService
         $payload = [
             'model' => $model,
             'temperature' => 0,
-            'max_tokens' => 2000,
+            'max_completion_tokens' => 2000,
             'messages' => [[
                 'role' => 'user',
                 'content' => [
