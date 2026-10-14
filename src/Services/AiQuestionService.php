@@ -177,7 +177,7 @@ class AiQuestionService
             ];
         }
 
-        $text = $data['output'][0]['content'][0]['text'] ?? '';
+        $text = self::extractResponseText($data);
         $decoded = json_decode($text, true);
         if (!is_array($decoded) || !isset($decoded['questions']) || !is_array($decoded['questions'])) {
             return ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid question set'];
@@ -231,7 +231,7 @@ class AiQuestionService
         if ($response === false) return ['success' => false, 'status' => 502, 'error' => 'Could not connect to OpenAI: ' . $curlError];
         $data = json_decode($response, true);
         if ($httpCode >= 400) return ['success' => false, 'status' => 502, 'error' => $data['error']['message'] ?? 'OpenAI request failed'];
-        $result = json_decode($data['output'][0]['content'][0]['text'] ?? '', true);
+        $result = json_decode(self::extractResponseText($data), true);
         $svg = self::sanitizeSvg((string)($result['svg'] ?? ''));
         return $svg === '' ? ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid SVG diagram.'] : ['success' => true, 'description' => $description, 'svg' => $svg];
     }
@@ -294,7 +294,7 @@ class AiQuestionService
         if ($httpCode >= 400) {
             return ['success' => false, 'status' => 502, 'error' => $data['error']['message'] ?? 'OpenAI request failed'];
         }
-        $decoded = json_decode($data['output'][0]['content'][0]['text'] ?? '', true);
+        $decoded = json_decode(self::extractResponseText($data), true);
         $spec = self::normalizeDiagramSpec($decoded);
         if (!$spec) {
             return ['success' => false, 'status' => 502, 'error' => 'AI could not determine a usable diagram output'];
@@ -330,6 +330,19 @@ class AiQuestionService
         unset($question);
 
         return ['success' => true, 'questions' => $questions];
+    }
+
+    private static function extractResponseText(array $data): string
+    {
+        foreach (($data['output'] ?? []) as $item) {
+            if (($item['type'] ?? '') !== 'message') continue;
+            foreach (($item['content'] ?? []) as $content) {
+                if (($content['type'] ?? '') === 'output_text') {
+                    return (string)($content['text'] ?? '');
+                }
+            }
+        }
+        return '';
     }
 
     public static function normalizeDiagramSpec(mixed $value): ?array
