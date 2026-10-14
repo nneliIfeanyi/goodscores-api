@@ -40,7 +40,6 @@ class OcrService
         $model = $_ENV['OPENAI_VISION_MODEL'] ?? ($_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini');
         $payload = [
             'model' => $model,
-            'temperature' => 0,
             'max_completion_tokens' => 2000,
             'messages' => [[
                 'role' => 'user',
