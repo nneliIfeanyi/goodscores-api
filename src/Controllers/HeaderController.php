@@ -53,23 +53,34 @@ class HeaderController
     public function update(int $id): void
     {
         $auth = Auth::requireAuth();
+        $userId = (int)$auth['sub'];
+        $header = Header::find($id, $userId);
+        if (!$header) {
+            Response::error('Header not found', 404);
+        }
+        if (!empty($header['details_edit_used'])) {
+            Response::error('Header details can only be edited once after creation. You can still update the logo.', 403);
+        }
+
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($input['school_name'] ?? '');
         if ($name === '') {
             Response::error('school_name is required');
         }
 
-        $ok = Header::update($id, (int)$auth['sub'], [
-            'label'       => $input['label'] ?? $name,
-            'school_name' => $name,
-            'extra_line'  => $input['extra_line'] ?? null,
-            'logo_path'   => $input['logo_path'] ?? null,
-            'is_default'  => !empty($input['is_default']),
-        ]);
-        if (!$ok) {
-            Response::error('Header not found', 404);
+        if (!Header::updateDetailsOnce(
+            $id,
+            $userId,
+            $name,
+            isset($input['extra_line']) ? trim((string)$input['extra_line']) : null
+        )) {
+            $header = Header::find($id, $userId);
+            if (!$header) {
+                Response::error('Header not found', 404);
+            }
+            Response::error('Header details can only be edited once after creation. You can still update the logo.', 403);
         }
-        Response::success(Header::find($id, (int)$auth['sub']), 'Header updated');
+        Response::success(Header::find($id, $userId), 'Header updated. Header details are now locked.');
     }
 
     public function destroy(int $id): void
@@ -102,11 +113,9 @@ class HeaderController
         $extension = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'][$mime];
         $relative = 'uploads/logos/header_' . $id . '_' . bin2hex(random_bytes(6)) . '.' . $extension;
         file_put_contents(__DIR__ . '/../../storage/' . $relative, $binary);
-        Header::update($id, (int)$auth['sub'], [
-            'label' => $header['label'], 'school_name' => $header['school_name'],
-            'extra_line' => $header['extra_line'], 'logo_path' => $relative,
-            'is_default' => !empty($header['is_default']),
-        ]);
+        if (!Header::updateLogo($id, (int)$auth['sub'], $relative)) {
+            Response::error('Header not found', 404);
+        }
         Response::success(['logo_path' => $relative], 'Header logo updated');
     }
 }

@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS paper_headers (
     extra_line      VARCHAR(255) NULL,
     logo_path       VARCHAR(500) NULL,
     is_default      TINYINT(1) NOT NULL DEFAULT 0,
+    details_edit_used TINYINT(1) NOT NULL DEFAULT 0,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user (user_id)
@@ -273,4 +274,3 @@ INSERT IGNORE INTO terms (id, school_id, name, sort_order) VALUES
 (3, NULL, '3rd Term', 3),
 (4, NULL, 'Mid-Term', 4),
 (5, NULL, 'Mock Exam', 5);
-

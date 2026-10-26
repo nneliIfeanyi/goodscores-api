@@ -74,6 +74,26 @@ class Header
         ]);
     }
 
+    public static function updateDetailsOnce(int $id, int $userId, string $schoolName, ?string $extraLine): bool
+    {
+        $stmt = Database::getInstance()->prepare('
+            UPDATE paper_headers
+            SET label = ?, school_name = ?, extra_line = ?, details_edit_used = 1
+            WHERE id = ? AND user_id = ? AND details_edit_used = 0
+        ');
+        $stmt->execute([$schoolName, $schoolName, $extraLine, $id, $userId]);
+        return $stmt->rowCount() === 1;
+    }
+
+    public static function updateLogo(int $id, int $userId, string $logoPath): bool
+    {
+        $stmt = Database::getInstance()->prepare(
+            'UPDATE paper_headers SET logo_path = ? WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$logoPath, $id, $userId]);
+        return $stmt->rowCount() === 1;
+    }
+
     public static function delete(int $id, int $userId): bool
     {
         $db = Database::getInstance();
