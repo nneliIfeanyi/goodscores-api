@@ -44,8 +44,8 @@ class AiQuestionService
             . ($passageBased
                 ? "Create one original age-appropriate passage or extract for this content type. Return it in the passage object with a suitable title and complete body, then make every question refer to that passage.\n"
                 : '')
-            . "Align with age-appropriate Nigerian primary curriculum expectations. Return JSON only."
-            . " Do not include explanations outside the JSON.";
+            . "Align with the Nigerian curriculum and the selected class level; do not simplify senior secondary content to primary-school level. Return JSON only."
+            . " Do not include explanations outside the JSON. For mathematics, preserve the exact expression using LaTeX commands inside inline \\( ... \\) or display \\[ ... \\] delimiters. Use \\frac, \\sqrt, superscripts, subscripts, logarithm bases, equations, and inequalities where appropriate; do not place math in code fences or JSON keys.";
 
         $schema = [
             'type' => 'object',
@@ -348,7 +348,7 @@ class AiQuestionService
     public static function normalizeDiagramSpec(mixed $value): ?array
     {
         if (!is_array($value)) return null;
-        $type = (string)($value['type'] ?? (array_key_exists('svg', $value) ? 'precise_diagram' : ''));
+        $type = (string)($value['type'] ?? (array_key_exists('svg', $value) ? 'precise_diagram' : 'illustration'));
         $description = trim((string)($value['description'] ?? ''));
         if (!in_array($type, ['precise_diagram', 'illustration'], true) || $description === '') return null;
         $labels = array_values(array_filter(array_map(

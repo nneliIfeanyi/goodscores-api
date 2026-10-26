@@ -111,7 +111,7 @@ class PdfService
             $sectionPassageId = (int)$section['passage']['id'];
             if (!isset($renderedPassages[$sectionPassageId])) {
               $passageTitle = htmlspecialchars($section['passage']['title'] ?? 'Passage');
-              $passageBody = strip_tags($section['passage']['body'] ?? '', '<p><br><strong><b><em><i><u><ol><ul><li>');
+              $passageBody = MathContent::html($section['passage']['body'] ?? '');
               $questionsHtml .= '<div style="margin:18px 0 10px;padding:10px 12px;border:1px solid #bbb;background:#fafafa;page-break-inside:avoid;">'
                 . '<strong>' . $passageTitle . '</strong><div style="margin-top:6px;">' . $passageBody . '</div></div>';
               $renderedPassages[$sectionPassageId] = true;
@@ -159,10 +159,10 @@ class PdfService
             $questionLabel = $currentMain . '(' . chr(96 + $currentPart) . ')(' . $roman . ')';
           }
           $questionIndent = $questionLevel * 18;
-          $body = strip_tags($q['body'] ?? '', '<p><br><strong><b><em><i><u><ol><ul><li>');
+          $body = MathContent::html($q['body'] ?? '');
           if (!empty($q['passage_id']) && !isset($renderedPassages[$q['passage_id']])) {
             $passageTitle = htmlspecialchars($q['passage_title'] ?? 'Comprehension passage');
-            $passageBody = strip_tags($q['passage_body'] ?? '', '<p><br><strong><b><em><i><u><ol><ul><li>');
+            $passageBody = MathContent::html($q['passage_body'] ?? '');
             $questionsHtml .= '<div style="margin:18px 0 10px;padding:10px 12px;border:1px solid #bbb;background:#fafafa;page-break-inside:avoid;">'
               . '<strong>' . $passageTitle . '</strong><div style="margin-top:6px;">' . $passageBody . '</div></div>';
             $renderedPassages[$q['passage_id']] = true;
@@ -175,7 +175,7 @@ class PdfService
               $optionItems = [];
               foreach ($q['options'] as $o) {
                 $key = htmlspecialchars($o['key'] ?? '');
-                $text = htmlspecialchars($o['text'] ?? '');
+                $text = MathContent::html($o['text'] ?? '');
                 $optionItems[] = "<span class=\"inline-option\"><strong>{$key}.</strong> {$text}</span>";
               }
               if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
