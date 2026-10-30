@@ -11,6 +11,7 @@ class CreditService
 {
     public const OCR_COST = 35;
     public const PDF_COST = 0;
+    public const WORD_EXPORT_COST = 45;
     public const OFFLINE_MIN = 200;
 
     public static function getUserEffectiveCredits(array $user): array
@@ -250,4 +251,3 @@ class CreditService
         ];
     }
 }
-

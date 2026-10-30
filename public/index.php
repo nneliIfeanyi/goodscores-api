@@ -52,6 +52,10 @@ if (str_starts_with($uri, '/storage/')) {
     $root = realpath(__DIR__ . '/../storage');
     if ($real && $root && str_starts_with($real, $root) && is_file($real)) {
         $mime = mime_content_type($real) ?: 'application/octet-stream';
+        if (str_starts_with($uri, '/storage/exports/') && strtolower(pathinfo($real, PATHINFO_EXTENSION)) === 'docx') {
+            $mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            header('Content-Disposition: attachment; filename="' . basename($real) . '"');
+        }
         header('Content-Type: ' . $mime);
         header('Content-Length: ' . filesize($real));
         readfile($real);
@@ -132,6 +136,7 @@ $paramRoutes = [
     ['GET',    '#^/papers/(\d+)$#',              'App\Controllers\PaperController', 'show'],
     ['PUT',    '#^/papers/(\d+)$#',              'App\Controllers\PaperController', 'update'],
     ['DELETE', '#^/papers/(\d+)$#',              'App\Controllers\PaperController', 'destroy'],
+    ['POST',   '#^/papers/(\d+)/export/word$#',  'App\Controllers\PaperController', 'exportWord'],
     ['POST',   '#^/papers/(\d+)/export$#',       'App\Controllers\PaperController', 'export'],
     ['POST',   '#^/school/logo$#',                'App\Controllers\SchoolController', 'uploadLogo'],
     ['POST',   '#^/headers/(\d+)/logo$#',         'App\Controllers\HeaderController', 'uploadLogo'],

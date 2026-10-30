@@ -3,7 +3,8 @@
   "description": "GoodScores backend",
   "require": {
     "php": ">=8.0",
-    "mpdf/mpdf": "^8.2"
+    "mpdf/mpdf": "^8.2",
+    "phpoffice/phpword": "^1.4"
   },
   "require-dev": {
     "phpunit/phpunit": "^10.5"

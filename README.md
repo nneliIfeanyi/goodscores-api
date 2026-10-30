@@ -61,7 +61,7 @@ Back up the production database before applying migrations. Apply migration file
 
 ## PHP and permissions
 
-Enable `pdo_mysql`, `curl`, and `mbstring`; enable `gd` when image processing is required. Ensure Apache rewrite and header modules are enabled. The web server must be able to write to runtime storage directories:
+Enable `pdo_mysql`, `curl`, `mbstring`, and `zip`; enable `gd` when image processing is required. The ZIP extension and Composer production dependencies are required for editable DOCX export. Ensure Apache rewrite and header modules are enabled. The web server must be able to write to runtime storage directories:
 
 ```bash
 chmod -R 775 storage

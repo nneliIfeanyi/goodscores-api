@@ -37,6 +37,12 @@ class QuestionController
         $offset = max(0, (int)($_GET['offset'] ?? 0));
 
         $list = Question::list($filters, $limit, $offset);
+        foreach ($list as &$question) {
+            $question['images'] = (int)($question['image_count'] ?? 0) > 0
+                ? Question::getImages((int)$question['id'])
+                : [];
+        }
+        unset($question);
         Response::success($list);
     }
 
@@ -352,4 +358,3 @@ class QuestionController
         ]), 'Illustration generated', 201);
     }
 }
-

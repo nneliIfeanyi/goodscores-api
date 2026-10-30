@@ -12,7 +12,6 @@ use App\Models\Paper;
 use App\Models\Question;
 use App\Models\User;
 use App\Services\AiQuestionService;
-use App\Services\CreditService;
 
 class BackupController
 {
@@ -45,7 +44,6 @@ class BackupController
         $input = Request::json();
         $items = $input['questions'] ?? [];
         if (!is_array($items) || count($items) > 500) Response::error('Invalid backup payload');
-        $billableCount = count(array_filter($items, static fn ($item) => empty($item['deleted'])));
 
         $db = Database::getInstance();
         $db->beginTransaction();
@@ -53,19 +51,6 @@ class BackupController
             $revision = $this->nextRevision($db, $userId);
             $user = User::findById($userId);
             if (!$user) Response::error('User not found', 404);
-            $creditResult = ['success' => true, 'new_balance' => CreditService::getTypedBalanceForResponse($user, 'backup')['balance']];
-            if ($billableCount > 0) {
-                $creditResult = CreditService::deductFor(
-                    $user,
-                    'backup',
-                    $billableCount,
-                    'Question bank backup (' . $billableCount . ' questions)',
-                    'backup_' . $userId . '_' . $revision
-                );
-                if (!$creditResult['success']) {
-                    Response::error('Insufficient credits for question bank backup (need ' . $billableCount . ')', 402);
-                }
-            }
             $processed = [];
             foreach ($items as $item) {
                 $offlineId = trim((string)($item['offline_id'] ?? ''));
@@ -146,15 +131,13 @@ class BackupController
                 'revision' => $revision,
                 'processed' => $processed,
                 'backed_up_at' => gmdate('c'),
-                'cost' => $billableCount,
-                'credits_left' => $creditResult['new_balance'],
             ], 'Question bank backup complete');
         } catch (\Throwable $error) {
             if ($db->inTransaction()) $db->rollBack();
             error_log('Question bank backup failed for user ' . $userId . ': ' . $error->getMessage());
             $message = str_contains(strtolower($error->getMessage()), 'question_bank_backups')
                 ? 'Question bank backup is not enabled on the server. Apply migration 004_add_manual_question_backup.sql.'
-                : 'Question bank backup failed. No questions or credits were changed.';
+                : 'Question bank backup failed. No questions were changed.';
             $extra = [];
             if (($_ENV['APP_DEBUG'] ?? 'false') === 'true' && ($_ENV['APP_ENV'] ?? 'local') !== 'production') {
                 $extra['debug_message'] = $error->getMessage();

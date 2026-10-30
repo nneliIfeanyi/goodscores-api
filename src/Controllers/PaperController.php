@@ -218,6 +218,71 @@ class PaperController
             'cost'         => 0,
         ], 'Export complete');
     }
+
+    public function exportWord(int $id): void
+    {
+        $auth = Auth::requireAuth();
+        $userId = (int)$auth['sub'];
+        \App\Middleware\RateLimit::attempt('word-export', 8, 600, (string)$userId);
+
+        $user = User::findById($userId);
+        if (!$user) {
+            Response::error('User not found', 404);
+        }
+
+        $paper = Paper::findById($id, $userId);
+        if (!$paper) {
+            Response::error('Paper not found', 404);
+        }
+        if (empty($paper['questions'])) {
+            Response::error('Paper has no questions to export');
+        }
+
+        $cost = \App\Services\CreditService::WORD_EXPORT_COST;
+        if (!\App\Services\CreditService::canAffordFor($user, 'export', $cost)) {
+            Response::error("Insufficient export credits (need {$cost})", 402);
+        }
+
+        try {
+            $result = \App\Services\WordService::renderDocx($paper, $user);
+        } catch (\Throwable $error) {
+            error_log('Word export failed: ' . $error->getMessage());
+            Response::error('Could not generate the Word document', 500);
+        }
+
+        $reference = 'word_export_' . $userId . '_' . $id . '_' . bin2hex(random_bytes(16));
+        try {
+            $deduction = \App\Services\CreditService::deductFor(
+                $user,
+                'export',
+                $cost,
+                'Word paper export',
+                $reference
+            );
+        } catch (\Throwable $error) {
+            if (is_file($result['path']) && !unlink($result['path'])) {
+                error_log('Could not remove uncharged Word export: ' . $result['path']);
+            }
+            error_log('Word export credit deduction failed: ' . $error->getMessage());
+            Response::error('Could not complete the Word export payment', 500);
+        }
+        if (!$deduction['success']) {
+            if (is_file($result['path']) && !unlink($result['path'])) {
+                error_log('Could not remove unpaid Word export: ' . $result['path']);
+            }
+            Response::error($deduction['message'] ?? 'Credit deduction failed', 402);
+        }
+
+        \App\Services\UsageService::log($userId, 'word_export', [
+            'paper_id' => $id,
+            'cost' => $cost,
+        ]);
+
+        Response::success([
+            'filename' => $result['filename'],
+            'download_url' => '/storage/' . $result['relative'],
+            'credits_left' => $deduction['new_balance'],
+            'cost' => $cost,
+        ], 'Word document ready');
+    }
 }
-
-
