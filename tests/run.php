@@ -37,6 +37,22 @@ $mcq = App\Services\AiQuestionService::validateQuestions([
 ], 1);
 check($mcq['success'] === false, 'MCQ with one option should fail');
 
+$configuredMcq = App\Services\AiQuestionService::validateQuestions([
+    [
+        'type' => 'mcq',
+        'body' => 'Choose one',
+        'options' => [
+            ['key' => 'X', 'text' => 'First'],
+            ['key' => 'Y', 'text' => 'Second'],
+            ['key' => 'Z', 'text' => 'Third'],
+        ],
+        'answer' => 'Y',
+    ],
+], 1, 3);
+check($configuredMcq['success'] === true, 'MCQ with configured option count should pass');
+check(array_column($configuredMcq['questions'][0]['options'], 'key') === ['A', 'B', 'C'], 'MCQ option labels should match configured count');
+check($configuredMcq['questions'][0]['answer'] === 'B', 'MCQ answer key should track normalized option labels');
+
 $invalidDiagram = App\Services\AiQuestionService::validateQuestions([
     ['type' => 'theory', 'body' => 'Draw a circle', 'diagram_request' => ['description' => ' ', 'labels' => ['x']]],
 ], 1);

@@ -6,6 +6,7 @@ use App\Helpers\Response;
 use App\Middleware\Auth;
 use App\Middleware\RateLimit;
 use App\Models\User;
+use App\Models\School;
 use App\Services\CreditService;
 use App\Services\AiImageService;
 use App\Services\AiQuestionService;
@@ -23,6 +24,17 @@ class AiController
         $user = User::findById((int)$auth['sub']);
         if (!$user) {
             Response::error('User not found', 404);
+        }
+        $paperSettings = json_decode((string)($user['pdf_settings'] ?? '{}'), true) ?: [];
+        if (!empty($user['school_id'])) {
+            $school = School::findById((int)$user['school_id']);
+            if ($school) {
+                $paperSettings = json_decode($school['paper_settings'] ?? '{}', true) ?: [];
+            }
+        }
+        $mcqOptionCount = (int)($paperSettings['mcq_option_count'] ?? 4);
+        if (!in_array($mcqOptionCount, [3, 4, 5], true)) {
+            $mcqOptionCount = 4;
         }
         $cost = (int)($_ENV['AI_CREDIT_COST'] ?? 35);
         if (!CreditService::canAffordFor($user, 'ai', $cost)) {
@@ -84,6 +96,7 @@ class AiController
 
         $result = AiQuestionService::generate([
             'count' => $count,
+            'mcq_option_count' => $mcqOptionCount,
             'type' => $type,
             'difficulty' => $difficulty,
             'include_diagrams' => $includeDiagrams,

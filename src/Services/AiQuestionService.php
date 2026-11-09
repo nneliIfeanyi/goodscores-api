@@ -21,6 +21,11 @@ class AiQuestionService
 
         $model = $_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini';
         $count = (int)$request['count'];
+        $mcqOptionCount = (int)($request['mcq_option_count'] ?? 4);
+        if (!in_array($mcqOptionCount, [3, 4, 5], true)) {
+            return ['success' => false, 'status' => 422, 'error' => 'MCQ options must be set to 3, 4, or 5'];
+        }
+        $lastOptionKey = chr(64 + $mcqOptionCount);
         $topic = $request['topic'] !== '' ? $request['topic'] : 'age-appropriate topics from the selected subject and class';
         $focus = $request['focus'] !== '' ? $request['focus'] : 'Use clear classroom language and avoid duplicate questions.';
         $diagramPrompt = trim((string)($request['diagram_prompt'] ?? ''));
@@ -35,6 +40,7 @@ class AiQuestionService
             . "Class: {$request['class_name']}\n"
             . "Term: {$request['term_name']}\n"
             . "Question type: Generate only these question types, distributed as appropriate: {$request['type']}\n"
+            . "For every MCQ, provide exactly {$mcqOptionCount} options labeled A through {$lastOptionKey}, in order. The correct answer must match one of these options. Do not add extra options.\n"
             . "Content type: {$contentType}\n"
             . "Difficulty: {$request['difficulty']}\n"
             . "Topic: {$topic}\n"
@@ -78,7 +84,7 @@ class AiQuestionService
                             'options' => [
                                 'anyOf' => [
                                     ['type' => 'null'],
-                                    ['type' => 'array', 'items' => [
+                                    ['type' => 'array', 'minItems' => $mcqOptionCount, 'maxItems' => $mcqOptionCount, 'items' => [
                                         'type' => 'object',
                                         'additionalProperties' => false,
                                         'required' => ['key', 'text'],
@@ -195,7 +201,7 @@ class AiQuestionService
             return ['success' => false, 'status' => 502, 'error' => 'AI did not return the requested passage'];
         }
 
-        $validated = self::validateQuestions($decoded['questions'], $count);
+        $validated = self::validateQuestions($decoded['questions'], $count, $mcqOptionCount);
         if (!$validated['success']) {
             return $validated;
         }
@@ -302,8 +308,11 @@ class AiQuestionService
         return ['success' => true, 'spec' => $spec];
     }
 
-    public static function validateQuestions(array $questions, int $count): array
+    public static function validateQuestions(array $questions, int $count, int $mcqOptionCount = 4): array
     {
+        if (!in_array($mcqOptionCount, [3, 4, 5], true)) {
+            return ['success' => false, 'status' => 422, 'error' => 'MCQ options must be set to 3, 4, or 5'];
+        }
         if (count($questions) !== $count) {
             return ['success' => false, 'status' => 502, 'error' => 'AI returned the wrong number of questions'];
         }
@@ -323,8 +332,46 @@ class AiQuestionService
             if ($question['body'] === '' || !in_array($question['type'], ['mcq', 'fill', 'theory'], true)) {
                 return ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid question at item ' . ($index + 1)];
             }
-            if ($question['type'] === 'mcq' && (!is_array($question['options']) || count($question['options']) < 2)) {
-                return ['success' => false, 'status' => 502, 'error' => 'AI returned an MCQ without enough options'];
+            if ($question['type'] === 'mcq') {
+                if (!is_array($question['options']) || count($question['options']) !== $mcqOptionCount) {
+                    return ['success' => false, 'status' => 502, 'error' => 'AI returned an MCQ with the wrong number of options; expected exactly ' . $mcqOptionCount];
+                }
+
+                $options = array_values($question['options']);
+                $answer = trim($question['answer']);
+                $answerOptionIndex = null;
+                foreach ($options as $optionIndex => $option) {
+                    if (!is_array($option)) {
+                        return ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid MCQ option'];
+                    }
+                    $optionKey = trim((string)($option['key'] ?? ''));
+                    if ($optionKey !== '' && strcasecmp($answer, $optionKey) === 0) {
+                        $answerOptionIndex = $optionIndex;
+                        break;
+                    }
+                }
+                if ($answerOptionIndex === null && preg_match('/^([A-E])\\.?$/i', $answer, $answerMatch)) {
+                    $candidateIndex = ord(strtoupper($answerMatch[1])) - 65;
+                    if ($candidateIndex < $mcqOptionCount) $answerOptionIndex = $candidateIndex;
+                }
+
+                foreach ($options as $optionIndex => $option) {
+                    if (!is_array($option)) {
+                        return ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid MCQ option'];
+                    }
+                    $optionText = trim((string)($option['text'] ?? ''));
+                    if ($optionText === '') {
+                        return ['success' => false, 'status' => 502, 'error' => 'AI returned an MCQ with an empty option'];
+                    }
+                    $options[$optionIndex] = [
+                        'key' => chr(65 + $optionIndex),
+                        'text' => $optionText,
+                    ];
+                }
+                $question['options'] = $options;
+                if ($answerOptionIndex !== null) {
+                    $question['answer'] = $options[$answerOptionIndex]['key'];
+                }
             }
         }
         unset($question);

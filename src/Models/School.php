@@ -58,6 +58,7 @@ class School
     {
         return [
             'paper_format' => 'columns',
+            'mcq_option_count' => 4,
             'paper_size' => 'A4',
             'orientation' => 'portrait',
             'margin_top' => 20,

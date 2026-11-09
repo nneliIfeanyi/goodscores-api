@@ -386,6 +386,19 @@ class AuthController
         }
 
         $settings = is_array($input['pdf_settings'] ?? null) ? $input['pdf_settings'] : [];
+        if (!array_key_exists('mcq_option_count', $settings)) {
+            if ($isSchoolAdmin) {
+                $school = School::findById((int)$user['school_id']);
+                $currentSettings = json_decode($school['paper_settings'] ?? '{}', true) ?: [];
+            } else {
+                $currentSettings = json_decode((string)($user['pdf_settings'] ?? '{}'), true) ?: [];
+            }
+            $settings['mcq_option_count'] = $currentSettings['mcq_option_count'] ?? 4;
+        }
+        if (!in_array($settings['mcq_option_count'], [3, 4, 5, '3', '4', '5'], true)) {
+            Response::error('MCQ options must be set to 3, 4, or 5');
+        }
+        $settings['mcq_option_count'] = (int)$settings['mcq_option_count'];
         $settings['paper_format'] = in_array(($settings['paper_format'] ?? 'columns'), ['columns', 'inline_options'], true)
             ? $settings['paper_format'] : 'columns';
         $settings['paper_size'] = in_array(strtoupper((string)($settings['paper_size'] ?? 'A4')), ['A4', 'LETTER', 'LEGAL'], true)

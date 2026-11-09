@@ -50,14 +50,35 @@ final class AiQuestionServiceTest extends TestCase
         self::assertStringContainsString('invalid question', strtolower($result['error']));
     }
 
-    public function testMcqNeedsAtLeastTwoOptions(): void
+    public function testMcqMustMatchTheConfiguredOptionCount(): void
     {
         $result = AiQuestionService::validateQuestions([
             ['type' => 'mcq', 'body' => 'Choose one', 'options' => [['key' => 'A', 'text' => 'Only one']]],
         ], 1);
 
         self::assertFalse($result['success']);
-        self::assertStringContainsString('without enough options', $result['error']);
+        self::assertStringContainsString('wrong number of options', $result['error']);
+    }
+
+    public function testMcqOptionsAreLabeledForTheConfiguredCount(): void
+    {
+        $result = AiQuestionService::validateQuestions([
+            [
+                'type' => 'mcq',
+                'body' => 'Choose one',
+                'options' => [
+                    ['key' => 'X', 'text' => ' First '],
+                    ['key' => 'Y', 'text' => 'Second'],
+                    ['key' => 'Z', 'text' => 'Third'],
+                ],
+                'answer' => 'Y',
+            ],
+        ], 1, 3);
+
+        self::assertTrue($result['success']);
+        self::assertSame(['A', 'B', 'C'], array_column($result['questions'][0]['options'], 'key'));
+        self::assertSame('Second', $result['questions'][0]['options'][1]['text']);
+        self::assertSame('B', $result['questions'][0]['answer']);
     }
 
     public function testUnsafeOrEmptyDiagramRequestIsDiscarded(): void
