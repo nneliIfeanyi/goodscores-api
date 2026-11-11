@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS passages (
     subject_id  INT UNSIGNED NULL,
     class_id    INT UNSIGNED NULL,
     term_id     INT UNSIGNED NULL,
+    offline_id  VARCHAR(64) NULL,
     title       VARCHAR(255) NOT NULL,
     body        TEXT NOT NULL,
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -153,6 +154,7 @@ CREATE TABLE IF NOT EXISTS passages (
     FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL,
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE SET NULL,
     FOREIGN KEY (term_id) REFERENCES terms(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_passage_user_offline (user_id, offline_id),
     INDEX idx_passage_owner (user_id),
     INDEX idx_passage_context (subject_id, class_id, term_id)
 ) ENGINE=InnoDB;
@@ -235,6 +237,7 @@ CREATE TABLE IF NOT EXISTS diagrams (
 CREATE TABLE IF NOT EXISTS exam_papers (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id         INT UNSIGNED NOT NULL,
+    updated_by      INT UNSIGNED NULL,
     school_id       INT UNSIGNED NULL,
     title           VARCHAR(255) NOT NULL,
     subject_id      INT UNSIGNED NULL,
@@ -248,8 +251,25 @@ CREATE TABLE IF NOT EXISTS exam_papers (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE SET NULL,
-    INDEX idx_user (user_id)
+    INDEX idx_user (user_id),
+    INDEX idx_school_papers (school_id, updated_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_paper_revisions (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    paper_id        INT UNSIGNED NOT NULL,
+    school_id       INT UNSIGNED NOT NULL,
+    revision_number INT UNSIGNED NOT NULL,
+    changed_by      INT UNSIGNED NULL,
+    snapshot        JSON NOT NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (paper_id) REFERENCES exam_papers(id) ON DELETE CASCADE,
+    FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_exam_paper_revision (paper_id, revision_number),
+    INDEX idx_exam_paper_revisions_school (school_id, paper_id, revision_number)
 ) ENGINE=InnoDB;
 
 -- Paper headers (Pro Plus multi-header)

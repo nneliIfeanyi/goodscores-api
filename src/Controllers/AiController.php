@@ -93,6 +93,51 @@ class AiController
         }
 
         $usageToken = RateLimit::reserveAskAi((string)$auth['sub']);
+        $streaming = ($_GET['stream'] ?? '') === '1';
+        $sendEvent = static function (array $event): bool {
+            $line = json_encode($event, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+            if ($line === false) {
+                error_log('Could not encode Ask AI progress event: ' . json_last_error_msg());
+                return false;
+            }
+            echo $line . "\n";
+            if (ob_get_level() > 0) {
+                ob_flush();
+            }
+            flush();
+            return connection_aborted() === 0;
+        };
+        $lastProgressAt = 0.0;
+        $lastProgressPhase = '';
+        $lastProgressCount = -1;
+        $sendProgress = static function (array $progress) use ($sendEvent, &$lastProgressAt, &$lastProgressPhase, &$lastProgressCount): bool {
+            $phase = (string)($progress['phase'] ?? '');
+            $completed = (int)($progress['questions_completed'] ?? 0);
+            $now = microtime(true);
+            $changed = $phase !== $lastProgressPhase || $completed !== $lastProgressCount;
+            if (!$changed && $now - $lastProgressAt < 1.0) {
+                return connection_aborted() === 0;
+            }
+
+            $lastProgressAt = $now;
+            $lastProgressPhase = $phase;
+            $lastProgressCount = $completed;
+            return $sendEvent(['type' => 'progress'] + $progress);
+        };
+        if ($streaming) {
+            set_time_limit(75);
+            header('Content-Type: application/x-ndjson; charset=utf-8');
+            header('Cache-Control: no-cache, no-transform');
+            header('X-Accel-Buffering: no');
+            if (!$sendProgress([
+                'phase' => 'connecting',
+                'questions_completed' => 0,
+                'questions_total' => $count,
+            ])) {
+                RateLimit::release('ask_ai', (string)$auth['sub'], $usageToken);
+                return;
+            }
+        }
 
         $result = AiQuestionService::generate([
             'count' => $count,
@@ -106,10 +151,26 @@ class AiController
             'subject_name' => $subjectName,
             'class_name' => $className,
             'term_name' => $termName,
-        ]);
+        ], $streaming ? $sendProgress : null);
         if (!$result['success']) {
             RateLimit::release('ask_ai', (string)$auth['sub'], $usageToken);
+            if ($streaming) {
+                $sendEvent([
+                    'type' => 'error',
+                    'status' => $result['status'] ?? 502,
+                    'message' => $result['error'],
+                ]);
+                return;
+            }
             Response::error($result['error'], $result['status'] ?? 502);
+        }
+        if ($streaming && !$sendProgress([
+            'phase' => 'finishing',
+            'questions_completed' => count($result['questions']),
+            'questions_total' => $count,
+        ])) {
+            RateLimit::release('ask_ai', (string)$auth['sub'], $usageToken);
+            return;
         }
         RateLimit::complete('ask_ai', (string)$auth['sub'], $usageToken);
 
@@ -121,6 +182,14 @@ class AiController
             'ai_questions_' . bin2hex(random_bytes(16))
         );
         if (!$deduct['success']) {
+            if ($streaming) {
+                $sendEvent([
+                    'type' => 'error',
+                    'status' => 402,
+                    'message' => $deduct['message'] ?? 'Credit deduction failed',
+                ]);
+                return;
+            }
             Response::error($deduct['message'] ?? 'Credit deduction failed', 402);
         }
 
@@ -135,7 +204,7 @@ class AiController
             'model' => $result['model'] ?? null,
         ]);
 
-        Response::success([
+        $responseData = [
             'passage' => $result['passage'] ?? null,
             'questions' => $result['questions'],
             'count' => count($result['questions']),
@@ -143,7 +212,18 @@ class AiController
             'credits_left' => $credits['balance'],
             'daily_limit' => self::DAILY_REQUEST_LIMIT,
             'daily_remaining' => max(0, self::DAILY_REQUEST_LIMIT - UsageService::countToday((int)$auth['sub'], 'ai_questions_generated')),
-        ], 'Questions generated');
+        ];
+        if ($streaming) {
+            $sendEvent([
+                'type' => 'complete',
+                'response' => ['message' => 'Questions generated', 'data' => $responseData],
+                'questions_completed' => count($result['questions']),
+                'questions_total' => $count,
+            ]);
+            return;
+        }
+
+        Response::success($responseData, 'Questions generated');
     }
 
     public function generateDiagram(): void

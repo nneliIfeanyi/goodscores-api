@@ -58,6 +58,8 @@ mysql -u USER -p DATABASE_NAME < sql/schema.sql
 ```
 
 Back up the production database before applying migrations. Apply migration files in order and verify the application after each migration.
+Migration `008_add_passage_offline_sync.sql` enables idempotent syncing of passages saved offline.
+Migration `009_add_school_paper_admin_access.sql` enables school-admin paper access and revision history.
 
 ## PHP and permissions
 

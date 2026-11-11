@@ -109,6 +109,7 @@ $routes = [
 
     'GET /papers'               => ['App\Controllers\PaperController', 'index'],
     'POST /papers'              => ['App\Controllers\PaperController', 'store'],
+    'GET /school/papers'        => ['App\Controllers\PaperController', 'schoolIndex'],
 
     'POST /ocr'                 => ['App\Controllers\OcrController', 'extract'],
     'POST /ai/questions/generate' => ['App\Controllers\AiController', 'generateQuestions'],
@@ -138,6 +139,11 @@ $paramRoutes = [
     ['DELETE', '#^/papers/(\d+)$#',              'App\Controllers\PaperController', 'destroy'],
     ['POST',   '#^/papers/(\d+)/export/word$#',  'App\Controllers\PaperController', 'exportWord'],
     ['POST',   '#^/papers/(\d+)/export$#',       'App\Controllers\PaperController', 'export'],
+    ['GET',    '#^/school/papers/(\d+)/history$#', 'App\Controllers\PaperController', 'schoolHistory'],
+    ['GET',    '#^/school/papers/(\d+)$#',       'App\Controllers\PaperController', 'schoolShow'],
+    ['PUT',    '#^/school/papers/(\d+)$#',       'App\Controllers\PaperController', 'schoolUpdate'],
+    ['POST',   '#^/school/papers/(\d+)/export/word$#', 'App\Controllers\PaperController', 'schoolExportWord'],
+    ['POST',   '#^/school/papers/(\d+)/export$#', 'App\Controllers\PaperController', 'schoolExport'],
     ['POST',   '#^/school/logo$#',                'App\Controllers\SchoolController', 'uploadLogo'],
     ['POST',   '#^/headers/(\d+)/logo$#',         'App\Controllers\HeaderController', 'uploadLogo'],
 

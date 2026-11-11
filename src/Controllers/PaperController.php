@@ -25,7 +25,37 @@ class PaperController
         if (!$paper) {
             Response::error('Paper not found', 404);
         }
+        $paper['school_meta'] = [
+            'subjects' => Meta::subjectsForSchool($context['school_id']),
+            'classes' => Meta::classesForSchool($context['school_id']),
+            'terms' => Meta::terms($context['school_id']),
+        ];
         Response::success($paper);
+    }
+
+    public function schoolIndex(): void
+    {
+        $context = self::schoolAdminContext();
+        Response::success(Paper::listBySchool($context['school_id']));
+    }
+
+    public function schoolShow(int $id): void
+    {
+        $context = self::schoolAdminContext();
+        $paper = Paper::findBySchoolId($id, $context['school_id']);
+        if (!$paper) {
+            Response::error('Paper not found', 404);
+        }
+        Response::success($paper);
+    }
+
+    public function schoolHistory(int $id): void
+    {
+        $context = self::schoolAdminContext();
+        if (!Paper::findBySchoolId($id, $context['school_id'])) {
+            Response::error('Paper not found', 404);
+        }
+        Response::success(Paper::historyBySchool($id, $context['school_id']));
     }
 
     public function store(): void
@@ -110,20 +140,75 @@ class PaperController
         Response::success(Paper::findById($id, (int)$auth['sub']), 'Paper updated');
     }
 
-    private static function validateReferences(array $input, array $questionIds, int $userId, mixed $schoolId): array
+    public function schoolUpdate(int $id): void
+    {
+        $context = self::schoolAdminContext();
+        $paper = Paper::findBySchoolId($id, $context['school_id']);
+        if (!$paper) {
+            Response::error('Paper not found', 404);
+        }
+
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $title = trim($input['title'] ?? '');
+        if ($title === '') {
+            Response::error('Paper title is required');
+        }
+
+        $questionIds = $input['question_ids'] ?? [];
+        if (!is_array($questionIds)) {
+            Response::error('question_ids must be an array');
+        }
+        $questionIds = self::mergeSectionQuestionIds($input, $questionIds);
+        [$questionIds, $total] = self::validateReferences(
+            $input,
+            $questionIds,
+            (int)$paper['user_id'],
+            $context['school_id'],
+            true
+        );
+
+        $ok = Paper::updateBySchool($id, $context['school_id'], $context['id'], [
+            'title' => $title,
+            'subject_id' => $input['subject_id'] ?? $paper['subject_id'],
+            'class_id' => $input['class_id'] ?? $paper['class_id'],
+            'term_id' => $input['term_id'] ?? $paper['term_id'],
+            'header_override' => $input['header_override'] ?? $paper['header_override'],
+            'paper_settings' => $input['paper_settings'] ?? $paper['paper_settings'],
+            'question_ids' => $questionIds,
+            'total_marks' => $total,
+            'status' => $input['status'] ?? $paper['status'],
+        ]);
+        if (!$ok) {
+            Response::error('Paper not found', 404);
+        }
+        Response::success(Paper::findBySchoolId($id, $context['school_id']), 'Paper updated');
+    }
+
+    private static function validateReferences(
+        array $input,
+        array $questionIds,
+        int $userId,
+        mixed $schoolId,
+        bool $allowSchoolMetadata = false
+    ): array
     {
         $subjectId = (int)($input['subject_id'] ?? 0);
-        if ($subjectId && !Meta::subjectBelongsToTeacher($subjectId, $userId)) {
+        $schoolIdInt = $schoolId !== null ? (int)$schoolId : null;
+        if ($subjectId
+            && !Meta::subjectBelongsToTeacher($subjectId, $userId)
+            && !($allowSchoolMetadata && $schoolIdInt !== null && Meta::subjectBelongsToSchool($subjectId, $schoolIdInt))) {
             Response::error('Invalid subject for this teacher');
         }
 
         $classId = (int)($input['class_id'] ?? 0);
-        if ($classId && !Meta::classBelongsToTeacher($classId, $userId)) {
+        if ($classId
+            && !Meta::classBelongsToTeacher($classId, $userId)
+            && !($allowSchoolMetadata && $schoolIdInt !== null && Meta::classBelongsToSchool($classId, $schoolIdInt))) {
             Response::error('Invalid class for this teacher');
         }
 
         $termId = (int)($input['term_id'] ?? 0);
-        if ($termId && !Meta::termIsAvailable($termId, $schoolId !== null ? (int)$schoolId : null)) {
+        if ($termId && !Meta::termIsAvailable($termId, $schoolIdInt)) {
             Response::error('Invalid term');
         }
 
@@ -134,7 +219,7 @@ class PaperController
                 Response::error('question_ids contains an invalid question ID');
             }
             $questionId = (int)$qid;
-            $question = Question::findById($questionId, $userId, $schoolId !== null ? (int)$schoolId : null);
+            $question = Question::findById($questionId, $userId, $schoolIdInt);
             if (!$question) {
                 Response::error('One or more questions are not owned by you or no longer exist');
             }
@@ -180,14 +265,27 @@ class PaperController
     public function export(int $id): void
     {
         $auth = Auth::requireAuth();
-        \App\Middleware\RateLimit::attempt('pdf', 8, 600, (string)$auth['sub']);
-
         $user = User::findById((int)$auth['sub']);
         if (!$user) {
             Response::error('User not found', 404);
         }
+        self::exportPdfForUser($id, $user, null);
+    }
 
-        $paper = Paper::findById($id, (int)$auth['sub']);
+    public function schoolExport(int $id): void
+    {
+        $context = self::schoolAdminContext();
+        self::exportPdfForUser($id, $context['user'], $context['school_id']);
+    }
+
+    private static function exportPdfForUser(int $id, array $user, ?int $schoolId): void
+    {
+        $userId = (int)$user['id'];
+        \App\Middleware\RateLimit::attempt('pdf', 8, 600, (string)$userId);
+
+        $paper = $schoolId === null
+            ? Paper::findById($id, $userId)
+            : Paper::findBySchoolId($id, $schoolId);
         if (!$paper) {
             Response::error('Paper not found', 404);
         }
@@ -200,11 +298,11 @@ class PaperController
             Response::error($result['error'] ?? 'PDF export failed', 500);
         }
 
-        $user = User::findById((int)$auth['sub']);
         $credits = \App\Services\CreditService::getUserEffectiveCredits($user);
 
-        \App\Services\UsageService::log((int)$auth['sub'], 'pdf_export', [
+        \App\Services\UsageService::log($userId, 'pdf_export', [
             'paper_id' => $id,
+            'paper_owner_id' => (int)$paper['user_id'],
             'cost'     => 0,
             'fallback' => !empty($result['fallback']),
         ]);
@@ -223,14 +321,27 @@ class PaperController
     {
         $auth = Auth::requireAuth();
         $userId = (int)$auth['sub'];
-        \App\Middleware\RateLimit::attempt('word-export', 8, 600, (string)$userId);
-
         $user = User::findById($userId);
         if (!$user) {
             Response::error('User not found', 404);
         }
+        self::exportWordForUser($id, $user, null);
+    }
 
-        $paper = Paper::findById($id, $userId);
+    public function schoolExportWord(int $id): void
+    {
+        $context = self::schoolAdminContext();
+        self::exportWordForUser($id, $context['user'], $context['school_id']);
+    }
+
+    private static function exportWordForUser(int $id, array $user, ?int $schoolId): void
+    {
+        $userId = (int)$user['id'];
+        \App\Middleware\RateLimit::attempt('word-export', 8, 600, (string)$userId);
+
+        $paper = $schoolId === null
+            ? Paper::findById($id, $userId)
+            : Paper::findBySchoolId($id, $schoolId);
         if (!$paper) {
             Response::error('Paper not found', 404);
         }
@@ -275,6 +386,7 @@ class PaperController
 
         \App\Services\UsageService::log($userId, 'word_export', [
             'paper_id' => $id,
+            'paper_owner_id' => (int)$paper['user_id'],
             'cost' => $cost,
         ]);
 
@@ -284,5 +396,23 @@ class PaperController
             'credits_left' => $deduction['new_balance'],
             'cost' => $cost,
         ], 'Word document ready');
+    }
+
+    private static function schoolAdminContext(): array
+    {
+        $auth = Auth::requireRole(['school_admin']);
+        $user = User::findById((int)$auth['sub']);
+        if (!$user || ($user['role'] ?? '') !== 'school_admin') {
+            Response::error('Forbidden', 403);
+        }
+        $schoolId = (int)($user['school_id'] ?? 0);
+        if (!$schoolId) {
+            Response::error('No school associated', 400);
+        }
+        return [
+            'id' => (int)$user['id'],
+            'school_id' => $schoolId,
+            'user' => $user,
+        ];
     }
 }

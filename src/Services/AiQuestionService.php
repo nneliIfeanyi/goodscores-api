@@ -8,7 +8,7 @@ namespace App\Services;
  */
 class AiQuestionService
 {
-    public static function generate(array $request): array
+    public static function generate(array $request, ?callable $onProgress = null): array
     {
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
         if ($apiKey === '') {
@@ -19,7 +19,7 @@ class AiQuestionService
             ];
         }
 
-        $model = $_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini';
+        $model = $_ENV['OPENAI_MODEL'] ?? 'gpt-6-luna';
         $count = (int)$request['count'];
         $mcqOptionCount = (int)($request['mcq_option_count'] ?? 4);
         if (!in_array($mcqOptionCount, [3, 4, 5], true)) {
@@ -139,51 +139,67 @@ class AiQuestionService
             ],
         ];
 
-        $response = false;
-        $httpCode = 0;
-        $curlError = '';
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            $ch = curl_init('https://api.openai.com/v1/responses');
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => [
-                    'Authorization: Bearer ' . $apiKey,
-                    'Content-Type: application/json',
-                ],
-                CURLOPT_POSTFIELDS => json_encode($payload),
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_TIMEOUT => 60,
-            ]);
-            $response = curl_exec($ch);
-            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlError = curl_error($ch);
-            $curlErrno = curl_errno($ch);
-            curl_close($ch);
-
-            if ($response !== false || $curlErrno !== CURLE_COULDNT_RESOLVE_HOST) {
-                break;
+        if ($onProgress !== null) {
+            $streamed = self::requestStreamingResponse($payload, $apiKey, $count, $onProgress);
+            if (!$streamed['success']) {
+                return $streamed;
             }
+            $text = $streamed['text'];
+            if ($onProgress([
+                'phase' => 'validating',
+                'questions_completed' => $streamed['questions_completed'],
+                'questions_total' => $count,
+            ]) === false) {
+                return ['success' => false, 'status' => 499, 'error' => 'Generation was cancelled'];
+            }
+        } else {
+            $response = false;
+            $httpCode = 0;
+            $curlError = '';
+            for ($attempt = 0; $attempt < 2; $attempt++) {
+                $ch = curl_init('https://api.openai.com/v1/responses');
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_HTTPHEADER => [
+                        'Authorization: Bearer ' . $apiKey,
+                        'Content-Type: application/json',
+                    ],
+                    CURLOPT_POSTFIELDS => json_encode($payload),
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 60,
+                ]);
+                $response = curl_exec($ch);
+                $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlError = curl_error($ch);
+                $curlErrno = curl_errno($ch);
+                curl_close($ch);
+
+                if ($response !== false || $curlErrno !== CURLE_COULDNT_RESOLVE_HOST) {
+                    break;
+                }
+            }
+
+            if ($response === false) {
+                return [
+                    'success' => false,
+                    'status' => 502,
+                    'error' => 'Could not connect to OpenAI from the server. Check DNS, firewall, proxy, or internet access. (' . $curlError . ')',
+                ];
+            }
+
+            $data = json_decode($response, true);
+            if ($httpCode >= 400) {
+                return [
+                    'success' => false,
+                    'status' => 502,
+                    'error' => $data['error']['message'] ?? 'OpenAI request failed',
+                ];
+            }
+
+            $text = self::extractResponseText($data);
         }
 
-        if ($response === false) {
-            return [
-                'success' => false,
-                'status' => 502,
-                'error' => 'Could not connect to OpenAI from the server. Check DNS, firewall, proxy, or internet access. (' . $curlError . ')',
-            ];
-        }
-
-        $data = json_decode($response, true);
-        if ($httpCode >= 400) {
-            return [
-                'success' => false,
-                'status' => 502,
-                'error' => $data['error']['message'] ?? 'OpenAI request failed',
-            ];
-        }
-
-        $text = self::extractResponseText($data);
         $decoded = json_decode($text, true);
         if (!is_array($decoded) || !isset($decoded['questions']) || !is_array($decoded['questions'])) {
             return ['success' => false, 'status' => 502, 'error' => 'AI returned an invalid question set'];
@@ -206,7 +222,219 @@ class AiQuestionService
             return $validated;
         }
 
+        if ($onProgress !== null && $onProgress([
+            'phase' => 'validating',
+            'questions_completed' => count($validated['questions']),
+            'questions_total' => $count,
+        ]) === false) {
+            return ['success' => false, 'status' => 499, 'error' => 'Generation was cancelled'];
+        }
+
         return ['success' => true, 'passage' => $passage, 'questions' => $validated['questions'], 'model' => $model];
+    }
+
+    private static function requestStreamingResponse(array $payload, string $apiKey, int $count, callable $onProgress): array
+    {
+        $payload['stream'] = true;
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $eventBuffer = '';
+            $rawResponse = '';
+            $text = '';
+            $streamError = '';
+            $httpCode = 0;
+            $curlError = '';
+            $curlErrno = 0;
+            $responseCompleted = false;
+            $cancelled = false;
+            $lastQuestionCount = 0;
+            $questionParser = new QuestionStreamParser();
+
+            $notify = static function (string $phase) use ($onProgress, $count, &$lastQuestionCount, &$cancelled): bool {
+                if ($onProgress([
+                    'phase' => $phase,
+                    'questions_completed' => $lastQuestionCount,
+                    'questions_total' => $count,
+                ]) === false) {
+                    $cancelled = true;
+                    return false;
+                }
+                return true;
+            };
+
+            $processEvent = static function (array $event) use (
+                &$text,
+                &$streamError,
+                &$responseCompleted,
+                &$lastQuestionCount,
+                $questionParser,
+                $notify
+            ): bool {
+                $type = (string)($event['type'] ?? '');
+                if ($type === 'response.output_text.delta') {
+                    $delta = $event['delta'] ?? null;
+                    if (!is_string($delta)) {
+                        $streamError = 'OpenAI returned an invalid streaming response';
+                        return false;
+                    }
+
+                    $text .= $delta;
+                    $lastQuestionCount = max($lastQuestionCount, $questionParser->push($delta));
+                    return $notify('generating');
+                }
+
+                if ($type === 'response.output_text.done') {
+                    if ($text === '' && is_string($event['text'] ?? null)) {
+                        $text = $event['text'];
+                    }
+                    return true;
+                }
+
+                if ($type === 'response.completed') {
+                    $responseCompleted = true;
+                    if ($text === '' && is_array($event['response'] ?? null)) {
+                        $text = self::extractResponseText($event['response']);
+                    }
+                    return true;
+                }
+
+                if (in_array($type, ['error', 'response.failed', 'response.incomplete'], true)) {
+                    $message = $event['error']['message']
+                        ?? $event['response']['error']['message']
+                        ?? $event['response']['incomplete_details']['reason']
+                        ?? $event['message']
+                        ?? null;
+                    $streamError = is_string($message) && trim($message) !== ''
+                        ? $message
+                        : 'OpenAI did not complete the generated question set';
+                    return false;
+                }
+
+                return true;
+            };
+
+            $processEventBlock = static function (string $block) use ($processEvent, &$streamError): bool {
+                $dataLines = [];
+                foreach (explode("\n", $block) as $line) {
+                    if (!str_starts_with($line, 'data:')) {
+                        continue;
+                    }
+                    $data = substr($line, 5);
+                    $dataLines[] = str_starts_with($data, ' ') ? substr($data, 1) : $data;
+                }
+                if (!$dataLines) {
+                    return true;
+                }
+
+                $eventData = implode("\n", $dataLines);
+                if ($eventData === '' || $eventData === '[DONE]') {
+                    return true;
+                }
+                $event = json_decode($eventData, true);
+                if (!is_array($event)) {
+                    $streamError = 'OpenAI returned invalid streaming data';
+                    return false;
+                }
+
+                return $processEvent($event);
+            };
+
+            $writeCallback = static function ($handle, string $chunk) use (
+                &$eventBuffer,
+                &$rawResponse,
+                &$text,
+                &$lastQuestionCount,
+                &$responseCompleted,
+                &$streamError,
+                $processEventBlock,
+                $notify
+            ): int {
+                $rawResponse .= $chunk;
+                $eventBuffer .= $chunk;
+                $eventBuffer = str_replace("\r\n", "\n", $eventBuffer);
+
+                while (($separator = strpos($eventBuffer, "\n\n")) !== false) {
+                    $block = substr($eventBuffer, 0, $separator);
+                    $eventBuffer = substr($eventBuffer, $separator + 2);
+                    if (!$processEventBlock($block)) {
+                        return 0;
+                    }
+                }
+
+                $phase = $responseCompleted ? 'validating' : ($text !== '' ? 'generating' : 'connecting');
+                return $notify($phase) ? strlen($chunk) : 0;
+            };
+
+            $ch = curl_init('https://api.openai.com/v1/responses');
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: Bearer ' . $apiKey,
+                    'Content-Type: application/json',
+                    'Accept: text/event-stream',
+                ],
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_WRITEFUNCTION => $writeCallback,
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            $curlErrno = curl_errno($ch);
+            curl_close($ch);
+
+            if ($cancelled) {
+                return ['success' => false, 'status' => 499, 'error' => 'Generation was cancelled'];
+            }
+            if ($httpCode >= 400) {
+                $data = json_decode($rawResponse, true);
+                return [
+                    'success' => false,
+                    'status' => 502,
+                    'error' => $data['error']['message'] ?? 'OpenAI request failed',
+                ];
+            }
+            if ($streamError !== '') {
+                return ['success' => false, 'status' => 502, 'error' => $streamError];
+            }
+            if ($response === false) {
+                if ($curlErrno === CURLE_COULDNT_RESOLVE_HOST && $attempt === 0) {
+                    continue;
+                }
+                return [
+                    'success' => false,
+                    'status' => 502,
+                    'error' => 'Could not connect to OpenAI from the server. Check DNS, firewall, proxy, or internet access. (' . $curlError . ')',
+                ];
+            }
+
+            if ($eventBuffer !== '' && !$processEventBlock($eventBuffer)) {
+                if ($cancelled) {
+                    return ['success' => false, 'status' => 499, 'error' => 'Generation was cancelled'];
+                }
+                return ['success' => false, 'status' => 502, 'error' => $streamError];
+            }
+            if (!$responseCompleted) {
+                return ['success' => false, 'status' => 502, 'error' => 'OpenAI stream ended before generation completed'];
+            }
+            if ($text === '') {
+                return ['success' => false, 'status' => 502, 'error' => 'AI returned an empty question set'];
+            }
+
+            return [
+                'success' => true,
+                'text' => $text,
+                'questions_completed' => $lastQuestionCount,
+            ];
+        }
+
+        return [
+            'success' => false,
+            'status' => 502,
+            'error' => 'Could not connect to OpenAI from the server.',
+        ];
     }
 
     public static function generateDiagram(string $description, string $type): array
@@ -218,7 +446,7 @@ class AiQuestionService
         if ($type !== 'precise_diagram') return ['success' => false, 'status' => 422, 'error' => 'Only precise SVG diagrams can be generated here.'];
 
         $payload = [
-            'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini',
+            'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-6-luna',
             'input' => [
                 ['role' => 'system', 'content' => 'Create safe, classroom-friendly inline SVG diagrams. Return only valid JSON. Never use scripts, animation, external assets, stylesheets, foreignObject, or event handlers.'],
                 ['role' => 'user', 'content' => "Create a precise educational SVG diagram for this description:\n{$description}"],
@@ -254,7 +482,7 @@ class AiQuestionService
         }
 
         $payload = [
-            'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini',
+            'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-6-luna',
             'input' => [
                 [
                     'role' => 'system',

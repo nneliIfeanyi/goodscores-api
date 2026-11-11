@@ -23,7 +23,7 @@ class Passage
             }
         }
 
-        $stmt = $db->prepare('SELECT p.id, p.title, p.body, p.subject_id, p.class_id, p.term_id,
+        $stmt = $db->prepare('SELECT p.id, p.offline_id, p.title, p.body, p.subject_id, p.class_id, p.term_id,
                 s.name AS subject_name, c.name AS class_name, t.name AS term_name,
                 (SELECT COUNT(*) FROM questions q WHERE q.passage_id = p.id AND q.is_deleted = 0) AS question_count
             FROM passages p
@@ -39,11 +39,21 @@ class Passage
     {
         $db = Database::getInstance();
         $stmt = $db->prepare('INSERT INTO passages
-            (user_id, school_id, subject_id, class_id, term_id, title, body, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
+            (user_id, school_id, subject_id, class_id, term_id, offline_id, title, body, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+                id = LAST_INSERT_ID(id),
+                school_id = VALUES(school_id),
+                subject_id = VALUES(subject_id),
+                class_id = VALUES(class_id),
+                term_id = VALUES(term_id),
+                title = VALUES(title),
+                body = VALUES(body),
+                updated_at = NOW()');
         $stmt->execute([
             $data['user_id'], $data['school_id'] ?? null, $data['subject_id'] ?? null,
-            $data['class_id'] ?? null, $data['term_id'] ?? null, $data['title'], $data['body'],
+            $data['class_id'] ?? null, $data['term_id'] ?? null, $data['offline_id'] ?? null,
+            $data['title'], $data['body'],
         ]);
         return (int)$db->lastInsertId();
     }

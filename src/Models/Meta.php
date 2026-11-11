@@ -65,6 +65,38 @@ class Meta
         return $stmt->fetchAll();
     }
 
+    public static function subjectsForSchool(int $schoolId): array
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('
+            SELECT DISTINCT s.id, s.name, s.code, s.school_id, s.teacher_id
+            FROM subjects s
+            LEFT JOIN users u ON u.id = s.teacher_id
+            WHERE (s.school_id IS NULL AND s.teacher_id IS NULL)
+               OR s.school_id = ?
+               OR u.school_id = ?
+            ORDER BY s.name
+        ');
+        $stmt->execute([$schoolId, $schoolId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function classesForSchool(int $schoolId): array
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('
+            SELECT DISTINCT c.id, c.name, c.sort_order, c.school_id, c.teacher_id
+            FROM classes c
+            LEFT JOIN users u ON u.id = c.teacher_id
+            WHERE (c.school_id IS NULL AND c.teacher_id IS NULL)
+               OR c.school_id = ?
+               OR u.school_id = ?
+            ORDER BY c.sort_order, c.name
+        ');
+        $stmt->execute([$schoolId, $schoolId]);
+        return $stmt->fetchAll();
+    }
+
     public static function terms(?int $schoolId = null): array
     {
         $db = Database::getInstance();
@@ -106,6 +138,36 @@ class Meta
         $db = Database::getInstance();
         $stmt = $db->prepare('SELECT 1 FROM classes WHERE id = ? AND teacher_id = ? LIMIT 1');
         $stmt->execute([$classId, $teacherId]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    public static function subjectBelongsToSchool(int $subjectId, int $schoolId): bool
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('
+            SELECT 1
+            FROM subjects s
+            LEFT JOIN users u ON u.id = s.teacher_id
+            WHERE s.id = ?
+              AND ((s.school_id IS NULL AND s.teacher_id IS NULL) OR s.school_id = ? OR u.school_id = ?)
+            LIMIT 1
+        ');
+        $stmt->execute([$subjectId, $schoolId, $schoolId]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    public static function classBelongsToSchool(int $classId, int $schoolId): bool
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('
+            SELECT 1
+            FROM classes c
+            LEFT JOIN users u ON u.id = c.teacher_id
+            WHERE c.id = ?
+              AND ((c.school_id IS NULL AND c.teacher_id IS NULL) OR c.school_id = ? OR u.school_id = ?)
+            LIMIT 1
+        ');
+        $stmt->execute([$classId, $schoolId, $schoolId]);
         return (bool)$stmt->fetchColumn();
     }
 

@@ -37,7 +37,7 @@ class OcrService
         if (!in_array($mime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
             return ['success' => false, 'error' => 'OCR supports JPG, PNG, GIF, and WebP images only'];
         }
-        $model = $_ENV['OPENAI_VISION_MODEL'] ?? ($_ENV['OPENAI_MODEL'] ?? 'gpt-4o-mini');
+        $model = $_ENV['OPENAI_VISION_MODEL'] ?? ($_ENV['OPENAI_MODEL'] ?? 'gpt-6-luna');
         $payload = [
             'model' => $model,
             'max_completion_tokens' => 2000,
