@@ -39,20 +39,20 @@ class PassageController
 
         $userId = (int)$auth['sub'];
         $schoolId = $auth['school_id'] ?? null;
-        $subjectId = (int)($input['subject_id'] ?? 0);
-        if ($subjectId && !Meta::subjectBelongsToTeacher($subjectId, $userId)) {
-            if ($offlineId === '') Response::error('Invalid subject for this teacher');
-            $subjectId = 0;
+        $subject = $input['subject_id'] ?? null;
+        $subjectId = (int)$subject;
+        if ($subject !== null && $subject !== '' && (!ctype_digit((string)$subject) || !$subjectId || !Meta::subjectBelongsToTeacher($subjectId, $userId))) {
+            Response::error('Invalid subject for this teacher');
         }
-        $classId = (int)($input['class_id'] ?? 0);
-        if ($classId && !Meta::classBelongsToTeacher($classId, $userId)) {
-            if ($offlineId === '') Response::error('Invalid class for this teacher');
-            $classId = 0;
+        $class = $input['class_id'] ?? null;
+        $classId = (int)$class;
+        if ($class !== null && $class !== '' && (!ctype_digit((string)$class) || !$classId || !Meta::classBelongsToTeacher($classId, $userId))) {
+            Response::error('Invalid class for this teacher');
         }
-        $termId = (int)($input['term_id'] ?? 0);
-        if ($termId && !Meta::termIsAvailable($termId, $schoolId !== null ? (int)$schoolId : null)) {
-            if ($offlineId === '') Response::error('Invalid term');
-            $termId = 0;
+        $term = $input['term_id'] ?? null;
+        $termId = (int)$term;
+        if ($term !== null && $term !== '' && (!ctype_digit((string)$term) || !$termId || !Meta::termIsAvailable($termId, $schoolId !== null ? (int)$schoolId : null))) {
+            Response::error('Invalid term');
         }
 
         $user = User::findById($userId);

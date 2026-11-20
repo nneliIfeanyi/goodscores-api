@@ -117,6 +117,7 @@ $routes = [
     'GET /backup/questions'       => ['App\Controllers\BackupController', 'restoreQuestions'],
     'GET /backup/papers'          => ['App\Controllers\BackupController', 'restorePapers'],
     'POST /backup/questions'      => ['App\Controllers\BackupController', 'questions'],
+    'POST /backup/question-references' => ['App\Controllers\BackupController', 'repairQuestionReferences'],
     'GET /backup/status'          => ['App\Controllers\BackupController', 'status'],
 ];
 

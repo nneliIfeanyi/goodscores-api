@@ -7,6 +7,21 @@ use PDO;
 
 class Question
 {
+    public static function repairMissingReferences(int $id, int $userId, string $offlineId, array $references): bool
+    {
+        $db = Database::getInstance();
+        $identity = [$id, $userId, $offlineId, $offlineId, 'server:' . $id];
+        $where = 'id = ? AND user_id = ? AND is_deleted = 0 AND (offline_id = ? OR (offline_id IS NULL AND ? = ?))';
+        $find = $db->prepare('SELECT 1 FROM questions WHERE ' . $where);
+        $find->execute($identity);
+        if (!$find->fetchColumn()) return false;
+        $statement = $db->prepare('UPDATE questions SET subject_id = COALESCE(subject_id, ?), class_id = COALESCE(class_id, ?), term_id = COALESCE(term_id, ?) WHERE ' . $where);
+        $statement->execute(array_merge([
+            $references['subject_id'], $references['class_id'], $references['term_id'],
+        ], $identity));
+        return true;
+    }
+
     public static function findById(int $id, ?int $userId = null, ?int $schoolId = null): ?array
     {
         $db = Database::getInstance();

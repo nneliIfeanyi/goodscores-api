@@ -68,18 +68,8 @@ class BackupController
                 $existingStatement->execute([$userId, $offlineId, (int)($item['id'] ?? 0)]);
                 $existing = $existingStatement->fetch() ?: null;
                 $schoolId = isset($user['school_id']) ? (int)$user['school_id'] : null;
-                $subjectId = self::serverId($item['subject_id'] ?? null);
-                $classId = self::serverId($item['class_id'] ?? null);
-                $topicId = self::serverId($item['topic_id'] ?? null);
-                $termId = self::serverId($item['term_id'] ?? null);
-                $passageId = self::serverId($item['passage_id'] ?? null);
-                $data = [
-                    // Local metadata IDs may not exist in this server database.
-                    'subject_id' => $subjectId && Meta::subjectBelongsToTeacher($subjectId, $userId) ? $subjectId : null,
-                    'topic_id' => $topicId && Meta::topicBelongsToTeacher($topicId, $userId) ? $topicId : null,
-                    'class_id' => $classId && Meta::classBelongsToTeacher($classId, $userId) ? $classId : null,
-                    'term_id' => $termId && Meta::termIsAvailable($termId, $schoolId) ? $termId : null,
-                    'passage_id' => $passageId && Passage::belongsToUser($passageId, $userId) ? $passageId : null,
+                $references = self::validateReferences($item, $userId, $schoolId);
+                $data = array_merge($references, [
                     'content_type' => $item['content_type'] ?? 'standard',
                     'diagram_request' => $item['diagram_request'] ?? null,
                     'diagram_spec' => AiQuestionService::normalizeDiagramSpec($item['diagram_spec'] ?? null),
@@ -89,7 +79,7 @@ class BackupController
                     'answer' => $item['answer'] ?? null,
                     'marks' => $item['marks'] ?? 1,
                     'difficulty' => $item['difficulty'] ?? 'medium',
-                ];
+                ]);
                 if ($existing) {
                     Question::update((int)$existing['id'], $userId, $data);
                     $serverId = (int)$existing['id'];
@@ -132,6 +122,9 @@ class BackupController
                 'processed' => $processed,
                 'backed_up_at' => gmdate('c'),
             ], 'Question bank backup complete');
+        } catch (\InvalidArgumentException $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            Response::error($error->getMessage(), 400);
         } catch (\Throwable $error) {
             if ($db->inTransaction()) $db->rollBack();
             error_log('Question bank backup failed for user ' . $userId . ': ' . $error->getMessage());
@@ -143,6 +136,40 @@ class BackupController
                 $extra['debug_message'] = $error->getMessage();
             }
             Response::error($message, 500, $extra);
+        }
+    }
+
+    public function repairQuestionReferences(): void
+    {
+        $auth = Auth::requireAuth();
+        $userId = (int)$auth['sub'];
+        $user = User::findById($userId);
+        if (!$user) Response::error('User not found', 404);
+        $items = Request::json()['questions'] ?? null;
+        if (!is_array($items) || count($items) > 100) Response::error('Invalid question reference repair payload');
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            foreach ($items as $item) {
+                if (!is_array($item) || !self::serverId($item['id'] ?? null) || empty($item['offline_id'])) {
+                    throw new \InvalidArgumentException('Invalid question reference repair item');
+                }
+                $references = self::validateReferences($item, $userId, isset($user['school_id']) ? (int)$user['school_id'] : null);
+                $id = (int)$item['id'];
+                $offlineId = (string)$item['offline_id'];
+                if (!Question::repairMissingReferences($id, $userId, $offlineId, $references)) {
+                    throw new \InvalidArgumentException('Cannot repair a question that is no longer in your account.');
+                }
+            }
+            $db->commit();
+            Response::success(['processed' => count($items)], 'Question references checked');
+        } catch (\InvalidArgumentException $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            Response::error($error->getMessage(), 400);
+        } catch (\Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            error_log('Question reference repair failed for user ' . $userId . ': ' . $error->getMessage());
+            Response::error('Could not repair question categories. Local data was kept.', 500);
         }
     }
 
@@ -167,6 +194,27 @@ class BackupController
         if ($value === null || $value === '' || !ctype_digit((string)$value)) return null;
         $id = (int)$value;
         return $id > 0 ? $id : null;
+    }
+
+    private static function validateReferences(array $item, int $userId, ?int $schoolId): array
+    {
+        $checks = [
+            'subject_id' => fn(int $id): bool => Meta::subjectBelongsToTeacher($id, $userId),
+            'class_id' => fn(int $id): bool => Meta::classBelongsToTeacher($id, $userId),
+            'term_id' => fn(int $id): bool => Meta::termIsAvailable($id, $schoolId),
+            'topic_id' => fn(int $id): bool => Meta::topicBelongsToTeacher($id, $userId),
+            'passage_id' => fn(int $id): bool => Passage::belongsToUser($id, $userId),
+        ];
+        $references = [];
+        foreach ($checks as $field => $check) {
+            $value = $item[$field] ?? null;
+            $id = self::serverId($value);
+            if ($value !== null && $value !== '' && (!$id || !$check($id))) {
+                throw new \InvalidArgumentException('Cannot sync question: invalid ' . str_replace('_id', '', $field) . '. Check the selection and sync again.');
+            }
+            $references[$field] = $id;
+        }
+        return $references;
     }
 
     private function storePendingImage(int $questionId, string $dataUrl, array $metadata = []): void
