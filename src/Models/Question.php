@@ -77,11 +77,21 @@ class Question
         }
 
         if (!empty($filters['subject_id'])) {
-            $where[] = 'q.subject_id = ?';
+            $where[] = '(q.subject_id = ? OR EXISTS (
+                SELECT 1 FROM subjects selected JOIN subjects assigned
+                  ON assigned.teacher_id = selected.teacher_id AND LOWER(TRIM(assigned.name)) = LOWER(TRIM(selected.name))
+                WHERE selected.id = ? AND assigned.id = q.subject_id
+            ))';
+            $params[] = $filters['subject_id'];
             $params[] = $filters['subject_id'];
         }
         if (!empty($filters['class_id'])) {
-            $where[] = 'q.class_id = ?';
+            $where[] = '(q.class_id = ? OR EXISTS (
+                SELECT 1 FROM classes selected JOIN classes assigned
+                  ON assigned.teacher_id = selected.teacher_id AND LOWER(TRIM(assigned.name)) = LOWER(TRIM(selected.name))
+                WHERE selected.id = ? AND assigned.id = q.class_id
+            ))';
+            $params[] = $filters['class_id'];
             $params[] = $filters['class_id'];
         }
         if (!empty($filters['term_id'])) {

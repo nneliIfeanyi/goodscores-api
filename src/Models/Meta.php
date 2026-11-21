@@ -208,10 +208,7 @@ class Meta
 
     public static function createSubject(int $teacherId, ?int $schoolId, string $name, ?string $code = null): int
     {
-        $db = Database::getInstance();
-        $stmt = $db->prepare('INSERT INTO subjects (teacher_id, school_id, name, code) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$teacherId, $schoolId, trim($name), $code ? trim($code) : null]);
-        return (int)$db->lastInsertId();
+        return self::createTeacherCategory('subjects', $teacherId, $schoolId, $name, $code ? trim($code) : null);
     }
 
     public static function updateSubject(int $id, int $teacherId, string $name, ?string $code = null): bool
@@ -230,10 +227,32 @@ class Meta
 
     public static function createClass(int $teacherId, ?int $schoolId, string $name, int $sortOrder = 0): int
     {
+        return self::createTeacherCategory('classes', $teacherId, $schoolId, $name, $sortOrder);
+    }
+
+    private static function createTeacherCategory(string $table, int $teacherId, ?int $schoolId, string $name, mixed $extra): int
+    {
         $db = Database::getInstance();
-        $stmt = $db->prepare('INSERT INTO classes (teacher_id, school_id, name, sort_order) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$teacherId, $schoolId, trim($name), $sortOrder]);
-        return (int)$db->lastInsertId();
+        $db->beginTransaction();
+        try {
+            $lock = $db->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE');
+            $lock->execute([$teacherId]);
+            if (!$lock->fetchColumn()) throw new \RuntimeException('Teacher not found');
+            $find = $db->prepare("SELECT id FROM {$table} WHERE teacher_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id LIMIT 1");
+            $find->execute([$teacherId, $name]);
+            $id = $find->fetchColumn();
+            if (!$id) {
+                $column = $table === 'subjects' ? 'code' : 'sort_order';
+                $stmt = $db->prepare("INSERT INTO {$table} (teacher_id, school_id, name, {$column}) VALUES (?, ?, ?, ?)");
+                $stmt->execute([$teacherId, $schoolId, trim($name), $extra]);
+                $id = $db->lastInsertId();
+            }
+            $db->commit();
+            return (int)$id;
+        } catch (\Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $error;
+        }
     }
 
     public static function updateClass(int $id, int $teacherId, string $name, int $sortOrder = 0): bool

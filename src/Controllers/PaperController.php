@@ -25,11 +25,6 @@ class PaperController
         if (!$paper) {
             Response::error('Paper not found', 404);
         }
-        $paper['school_meta'] = [
-            'subjects' => Meta::subjectsForSchool($context['school_id']),
-            'classes' => Meta::classesForSchool($context['school_id']),
-            'terms' => Meta::terms($context['school_id']),
-        ];
         Response::success($paper);
     }
 
@@ -46,6 +41,11 @@ class PaperController
         if (!$paper) {
             Response::error('Paper not found', 404);
         }
+        $paper['school_meta'] = [
+            'subjects' => Meta::subjectsForSchool($context['school_id']),
+            'classes' => Meta::classesForSchool($context['school_id']),
+            'terms' => Meta::terms($context['school_id']),
+        ];
         Response::success($paper);
     }
 
