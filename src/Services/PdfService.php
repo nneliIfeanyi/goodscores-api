@@ -100,11 +100,11 @@ class PdfService
           }
         }
 
-        foreach ($sections as $section) {
+        foreach ($sections as $sectionIndex => $section) {
           $sectionTitle = htmlspecialchars($section['title'] ?? 'Questions');
           $sectionInstructions = htmlspecialchars($section['instructions'] ?? '');
           $questionsHtml .= '<div class="paper-section">'
-            . '<h2>' . $sectionTitle . '</h2>'
+            . '<h2 class="word-section-title" data-word-section-index="' . (int)$sectionIndex . '">' . $sectionTitle . '</h2>'
             . ($sectionInstructions !== '' ? '<div class="section-instructions">' . nl2br($sectionInstructions) . '</div>' : '');
 
           if (!empty($section['passage']['id'])) {
@@ -179,9 +179,9 @@ class PdfService
                 $optionItems[] = "<span class=\"inline-option\"><strong>{$key}.</strong> {$text}</span>";
               }
               if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
-                $opts = '<span class="inline-options">' . "\t" . implode('', $optionItems) . '</span>';
+                $opts = '<span class="word-inline-options inline-options">' . "\t" . implode('', $optionItems) . '</span>';
               } else {
-                $opts = '<div style="margin:5px 0 0 18px;font-size:9pt;line-height:1.25;">';
+                $opts = '<div class="word-inline-options" style="margin:5px 0 0 18px;font-size:9pt;line-height:1.25;">';
                 foreach ($optionItems as $optionItem) {
                   $opts .= '<div style="margin-bottom:3px;">' . $optionItem . '</div>';
                 }
@@ -216,9 +216,9 @@ class PdfService
 
             $sectionQuestionBlocks[] = "
               <div style=\"margin-bottom:16px;margin-left:{$questionIndent}px;page-break-inside:avoid;\">
-                <div style=\"font-size:12pt;\">
+                <div class=\"word-question-text\">
                   <strong>{$questionLabel}.</strong> {$body}
-                  <span style=\"float:right;font-size:10pt;color:#444;\">[{$marks} mark" . ($marks == 1 ? '' : 's') . "]</span>
+                  <span class=\"question-marks\" style=\"float:right;font-size:10pt;color:#444;\">[{$marks} mark" . ($marks == 1 ? '' : 's') . "]</span>
                 </div>
                 {$diagramRequest}
                 {$images}
@@ -244,7 +244,7 @@ class PdfService
         }
 
         if (!$showMarks) {
-          $questionsHtml = preg_replace('/\s*<span style="float:right;font-size:10pt;color:#444;">.*?<\/span>/', '', $questionsHtml) ?: $questionsHtml;
+          $questionsHtml = preg_replace('/\s*<span\b(?=[^>]*\bclass="[^"]*\bquestion-marks\b)[^>]*>.*?<\/span>/s', '', $questionsHtml) ?: $questionsHtml;
         }
 
         $date = date('j F Y');
@@ -329,7 +329,7 @@ class PdfService
 
   <div class="instructions">
     <strong>Instructions</strong>
-    <ol style="margin:4px 0 0 16px;padding:0;">
+    <ol class="word-plain-instructions" style="margin:4px 0 0 16px;padding:0;">
       <li>Write your answers clearly in the spaces provided or in your answer booklet.</li>
       <li>For multiple-choice questions, choose the correct option.</li>
     </ol>

@@ -52,10 +52,10 @@ class WordService
             throw new RuntimeException('PHP ZIP extension is required for Word export');
         }
 
-        [$markup, $pageStyle] = self::prepareHtml($html);
+        [$markup, $pageStyle, $documentStyle] = self::prepareHtml($html);
         $word = new PhpWord();
-        $word->setDefaultFontName('Arial');
-        $word->setDefaultFontSize(11);
+        $word->setDefaultFontName($documentStyle['fontName']);
+        $word->setDefaultFontSize($documentStyle['fontSize']);
         $section = $word->addSection($pageStyle);
         Html::addHtml($section, $markup, false, false);
         $outputEscapingEnabled = Settings::isOutputEscapingEnabled();
@@ -93,9 +93,82 @@ class WordService
             $styles[] = $style->textContent;
         }
         $pageStyle = self::getPageStyle(implode("\n", $styles));
+        $documentStyle = self::getDocumentStyle(implode("\n", $styles));
 
         foreach (iterator_to_array($xpath->query('//script | //head/title | //head/meta') ?: []) as $node) {
             $node->parentNode?->removeChild($node);
+        }
+        foreach (iterator_to_array($xpath->query('//span[contains(concat(" ", normalize-space(@class), " "), " question-marks ")]') ?: []) as $marks) {
+            $marks->parentNode?->removeChild($marks);
+        }
+        foreach (iterator_to_array($xpath->query('//ol[contains(concat(" ", normalize-space(@class), " "), " word-plain-instructions ")]') ?: []) as $list) {
+            $parent = $list->parentNode;
+            if (!$parent) {
+                continue;
+            }
+            foreach ($xpath->query('./li', $list) ?: [] as $item) {
+                $paragraph = $document->createElement('p');
+                while ($item->firstChild) {
+                    $paragraph->appendChild($item->firstChild);
+                }
+                $parent->insertBefore($paragraph, $list);
+            }
+            $parent->removeChild($list);
+        }
+        foreach (iterator_to_array($xpath->query('//h2[@data-word-section-index="1"]') ?: []) as $heading) {
+            $title = trim($heading->textContent);
+            if (!preg_match('/^Section\s+B\b/i', $title)) {
+                if (preg_match('/^Section\s+[A-Z]\s*:?\s*(.*)$/i', $title, $matches)) {
+                    $title = 'Section B' . ($matches[1] !== '' ? ': ' . trim($matches[1]) : '');
+                } else {
+                    $title = 'Section B' . ($title !== '' ? ': ' . $title : '');
+                }
+                while ($heading->firstChild) {
+                    $heading->removeChild($heading->firstChild);
+                }
+                $heading->appendChild($document->createTextNode($title));
+            }
+        }
+        foreach (iterator_to_array($xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " word-inline-options ")]') ?: []) as $options) {
+            $questionText = $xpath->query('../div[contains(concat(" ", normalize-space(@class), " "), " word-question-text ")]', $options)?->item(0);
+            if (!$questionText) {
+                continue;
+            }
+
+            $optionItems = $xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), " inline-option ")]', $options);
+            if (!$optionItems || $optionItems->length === 0) {
+                continue;
+            }
+
+            $paragraphs = $questionText->getElementsByTagName('p');
+            $questionParagraph = $paragraphs->length > 0
+                ? $paragraphs->item($paragraphs->length - 1)
+                : $document->createElement('p');
+            if ($paragraphs->length === 0) {
+                while ($questionText->firstChild) {
+                    $questionParagraph->appendChild($questionText->firstChild);
+                }
+                $questionText->appendChild($questionParagraph);
+            }
+
+            foreach ($optionItems as $optionItem) {
+                $marks = $xpath->query('.//span[contains(concat(" ", normalize-space(@class), " "), " question-marks ")]', $questionParagraph)?->item(0);
+                $questionParagraph->insertBefore($document->createTextNode(' '), $marks);
+                $questionParagraph->insertBefore($optionItem, $marks);
+            }
+            $options->parentNode?->removeChild($options);
+        }
+        foreach (iterator_to_array($xpath->query('//table[contains(concat(" ", normalize-space(@class), " "), " section-question-columns ")]') ?: []) as $table) {
+            $parent = $table->parentNode;
+            if (!$parent) {
+                continue;
+            }
+            foreach ($xpath->query('.//td', $table) ?: [] as $cell) {
+                while ($cell->firstChild) {
+                    $parent->insertBefore($cell->firstChild, $table);
+                }
+            }
+            $parent->removeChild($table);
         }
         foreach (iterator_to_array($xpath->query('//svg') ?: []) as $svg) {
             $placeholder = $document->createElement('p');
@@ -121,7 +194,7 @@ class WordService
             ? '<style>' . htmlspecialchars($stylesheet, ENT_NOQUOTES | ENT_XML1, 'UTF-8') . '</style>' . $bodyMarkup
             : $bodyMarkup;
 
-        return [$markup, $pageStyle];
+        return [$markup, $pageStyle, $documentStyle];
     }
 
     private static function useLocalImage(DOMElement $image): bool
@@ -171,5 +244,21 @@ class WordService
             'marginBottom' => Converter::cmToTwip($margins[2] / 10),
             'marginLeft' => Converter::cmToTwip($margins[3] / 10),
         ];
+    }
+
+    private static function getDocumentStyle(string $stylesheet): array
+    {
+        $fontName = 'Arial';
+        $fontSize = 11.0;
+        if (preg_match('/(?:^|})\s*body\s*\{([^}]*)\}/i', $stylesheet, $bodyStyle)) {
+            if (preg_match('/(?:^|;)\s*font-family\s*:\s*([^;]+)/i', $bodyStyle[1], $fontFamily)) {
+                $fontName = trim(explode(',', trim($fontFamily[1]))[0], " \t\n\r\0\x0B\"'");
+            }
+            if (preg_match('/(?:^|;)\s*font-size\s*:\s*([^;]+)/i', $bodyStyle[1], $fontSizeMatch)) {
+                $fontSize = (float)Converter::cssToPoint(trim($fontSizeMatch[1]));
+            }
+        }
+
+        return ['fontName' => $fontName, 'fontSize' => $fontSize];
     }
 }
