@@ -17,7 +17,7 @@ class WordServiceTest extends TestCase
         $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'goodscores-word-' . bin2hex(random_bytes(6)) . '.docx';
         try {
             WordService::writeDocxFromHtml(
-                '<html><head><style>h2 { text-align: center; }</style></head><body><h2>Sample Paper</h2><p>Question one: x<sup>2</sup></p></body></html>',
+                '<html><head><style>h2 { text-align: center; }</style></head><body><h2>Sample &amp; Paper</h2><p>Question one: x<sup>2</sup> &amp; y</p></body></html>',
                 $path
             );
 
@@ -27,8 +27,10 @@ class WordServiceTest extends TestCase
             $archive->close();
 
             self::assertIsString($document);
-            self::assertStringContainsString('Sample Paper', $document);
+            self::assertStringContainsString('Sample &amp; Paper', $document);
             self::assertStringContainsString('Question one:', $document);
+            $documentXml = new \DOMDocument();
+            self::assertTrue($documentXml->loadXML($document));
         } finally {
             if (is_file($path)) {
                 unlink($path);

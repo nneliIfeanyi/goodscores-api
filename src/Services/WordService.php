@@ -9,6 +9,7 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Converter;
 use PhpOffice\PhpWord\Shared\Html;
+use PhpOffice\PhpWord\Settings;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
@@ -57,7 +58,13 @@ class WordService
         $word->setDefaultFontSize(11);
         $section = $word->addSection($pageStyle);
         Html::addHtml($section, $markup, false, false);
-        IOFactory::createWriter($word, 'Word2007')->save($path);
+        $outputEscapingEnabled = Settings::isOutputEscapingEnabled();
+        Settings::setOutputEscapingEnabled(true);
+        try {
+            IOFactory::createWriter($word, 'Word2007')->save($path);
+        } finally {
+            Settings::setOutputEscapingEnabled($outputEscapingEnabled);
+        }
 
         if (!is_file($path) || filesize($path) === 0) {
             throw new RuntimeException('Word export did not produce a document');
