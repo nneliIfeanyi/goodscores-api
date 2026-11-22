@@ -21,6 +21,11 @@ use App\Middleware\Cors;
 use App\Helpers\Response;
 use App\Helpers\Security;
 
+$composerAutoload = __DIR__ . '/../vendor/autoload.php';
+if (is_file($composerAutoload)) {
+    require_once $composerAutoload;
+}
+
 // Load local defaults first, then override them with production values when enabled.
 Env::load(__DIR__ . '/../.env');
 if (($_ENV['APP_ENV'] ?? 'local') === 'production') {

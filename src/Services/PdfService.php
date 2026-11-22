@@ -192,7 +192,7 @@ class PdfService
             $images = '';
             $diagramRequest = '';
             $diagramSpec = $q['diagram_spec'] ?? ($q['diagram_request'] ?? []);
-            $diagramSvg = $diagramSpec['type'] === 'precise_diagram'
+            $diagramSvg = ($diagramSpec['type'] ?? '') === 'precise_diagram'
               ? ($diagramSpec['svg'] ?? '')
               : '';
             if (is_string($diagramSvg) && preg_match('/^<svg\b[\s\S]*<\/svg>$/i', trim($diagramSvg))) {
@@ -260,8 +260,8 @@ class PdfService
         $pdfFontSize = isset($settings['pdf_font_size']) ? (float)$settings['pdf_font_size'] : $pdfFontSize;
         $pdfFontSize = max(8, min(18, $pdfFontSize));
         $pdfFontFamily = $fontFamilies[$pdfFontKey] ?? 'DejaVu Sans';
-        $paperSize = in_array(strtoupper((string)($settings['paper_size'] ?? 'A4')), ['A4', 'LETTER', 'LEGAL'], true)
-          ? strtoupper((string)$settings['paper_size']) : 'A4';
+        $paperSizeValue = strtoupper((string)($settings['paper_size'] ?? 'A4'));
+        $paperSize = in_array($paperSizeValue, ['A4', 'LETTER', 'LEGAL'], true) ? $paperSizeValue : 'A4';
         $orientation = ($settings['orientation'] ?? 'portrait') === 'landscape' ? 'landscape' : 'portrait';
         $pageMargins = sprintf(
           '%smm %smm %smm %smm',
