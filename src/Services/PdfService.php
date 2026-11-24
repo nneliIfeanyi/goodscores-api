@@ -76,6 +76,8 @@ class PdfService
           $browserLogo = $publicBase . '/storage/' . str_replace('%2F', '/', rawurlencode($relativeLogo));
           $logoHtml = '<img src="' . htmlspecialchars($browserLogo) . '" data-local-src="' . htmlspecialchars($logoPath) . '" style="display:block;max-height:55px;max-width:90px;margin:auto;" alt="Logo" />';
         }
+        $logoCell = $logoHtml ? '<td class="exam-header-logo">' . $logoHtml . '</td>' : '';
+        $identityColspan = $logoHtml ? '' : ' colspan="2"';
 
         $questionsHtml = '';
         $renderedPassages = [];
@@ -285,9 +287,9 @@ class PdfService
   body { font-family: {$pdfFontFamily}, sans-serif; font-size: {$pdfFontSize}pt; color: #111; }
   .exam-header { width: 100%; height: {$headerHeight}px; border-bottom: 1px solid #0d9488; padding-bottom: 2px; margin-bottom: 4px; }
   .exam-header-logo { width: 18%; text-align: center; vertical-align: middle; }
-  .exam-header-identity { width: 64%; text-align: center; vertical-align: middle; }
-  .exam-header h1 { margin: 0 0 2px; font-size: 13pt; color: #0f766e; }
-  .exam-header .meta { font-size: 9pt; color: #333; margin-top: 2px; }
+  .exam-header-identity { width: 82%; text-align: center; vertical-align: middle; }
+  .exam-header h1 { margin: 0 0 4px; font-size: 21pt; font-weight: 800; line-height: 1.15; letter-spacing: .045em; text-transform: uppercase; overflow-wrap: anywhere; color: #0f766e; }
+  .exam-header .meta { font-size: 9pt; color: #333; margin-top: 3px; }
   .info-row { margin: 4px 0 7px; font-size: 9pt; }
   .info-row td { padding: 1px 6px 1px 0; }
   .instructions { border: 1px solid #ccc; padding: 5px 8px; margin-bottom: 8px; font-size: 8.5pt; background: #fafafa; }
@@ -305,12 +307,11 @@ class PdfService
 <body>
   <table class="exam-header">
     <tr>
-      <td class="exam-header-logo">{$logoHtml}</td>
-      <td class="exam-header-identity">
+      {$logoCell}
+      <td class="exam-header-identity"{$identityColspan}>
         {$schoolNameHtml}
-        <div style="font-size:8.5pt;">{$extraEsc}</div>
+        <div class="meta">{$extraEsc}</div>
       </td>
-      <td class="exam-header-logo"></td>
     </tr>
   </table>
 
