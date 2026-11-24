@@ -102,6 +102,7 @@ class PdfService
           }
         }
 
+        $previousMainNumber = 0;
         foreach ($sections as $sectionIndex => $section) {
           $sectionTitle = htmlspecialchars($section['title'] ?? 'Questions');
           $sectionInstructions = htmlspecialchars($section['instructions'] ?? '');
@@ -123,7 +124,7 @@ class PdfService
           $sectionQuestionBlocks = [];
 
           $n = 1;
-          $mainNumber = 0;
+          $mainNumber = ($section['numbering_mode'] ?? 'restart') === 'continue' ? $previousMainNumber : 0;
           $partNumber = 0;
           $subPartNumber = 0;
           $currentMain = 0;
@@ -235,6 +236,7 @@ class PdfService
               </div>";
             $n++;
           }
+          $previousMainNumber = $mainNumber;
           $columnCount = count($sectionQuestionBlocks);
           $leftCount = (int)ceil($columnCount / 2);
           $leftBlocks = array_slice($sectionQuestionBlocks, 0, $leftCount);
