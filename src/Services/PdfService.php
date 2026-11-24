@@ -27,7 +27,7 @@ class PdfService
         $userSettings = json_decode($user['pdf_settings'] ?? '{}', true) ?: [];
         $preferenceKeys = [
           'paper_format', 'paper_size', 'orientation', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
-          'header_height', 'show_logo', 'show_school_name', 'footer_text', 'show_marks',
+          'header_height', 'show_logo', 'show_school_name', 'show_marks',
           'pdf_font_size', 'pdf_font_family',
         ];
         foreach ($preferenceKeys as $key) {
@@ -180,7 +180,7 @@ class PdfService
                 $text = MathContent::html($o['text'] ?? '');
                 $optionItems[] = "<span class=\"inline-option\"><strong>{$key}.</strong> {$text}</span>";
               }
-              if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
+              if (in_array(($settings['paper_format'] ?? 'columns'), ['inline_options', 'single_column_inline'], true)) {
                 $opts = '<span class="word-inline-options inline-options">' . "\t" . implode('', $optionItems) . '</span>';
               } else {
                 $opts = '<div class="word-inline-options" style="margin:5px 0 0 18px;font-size:9pt;line-height:1.25;">';
@@ -216,11 +216,18 @@ class PdfService
                 }
             }
 
+            $singleColumnInline = ($settings['paper_format'] ?? 'columns') === 'single_column_inline';
+            $questionLine = "<strong>{$questionLabel}.</strong> {$body}";
+            if ($singleColumnInline && $opts !== '') {
+              $questionLine .= ' ' . $opts;
+              $opts = '';
+            }
+            $marksStyle = $singleColumnInline ? 'font-size:10pt;color:#444;margin-left:8px;' : 'float:right;font-size:10pt;color:#444;';
             $sectionQuestionBlocks[] = "
-              <div style=\"margin-bottom:16px;margin-left:{$questionIndent}px;page-break-inside:avoid;\">
+              <div class=\"question-block" . ($singleColumnInline ? ' single-column-question' : '') . "\" style=\"margin-bottom:16px;margin-left:{$questionIndent}px;page-break-inside:avoid;\">
                 <div class=\"word-question-text\">
-                  <strong>{$questionLabel}.</strong> {$body}
-                  <span class=\"question-marks\" style=\"float:right;font-size:10pt;color:#444;\">[{$marks} mark" . ($marks == 1 ? '' : 's') . "]</span>
+                  {$questionLine}
+                  <span class=\"question-marks\" style=\"{$marksStyle}\">[{$marks} mark" . ($marks == 1 ? '' : 's') . "]</span>
                 </div>
                 {$diagramRequest}
                 {$images}
@@ -232,7 +239,9 @@ class PdfService
           $leftCount = (int)ceil($columnCount / 2);
           $leftBlocks = array_slice($sectionQuestionBlocks, 0, $leftCount);
           $rightBlocks = array_slice($sectionQuestionBlocks, $leftCount);
-          if (($settings['paper_format'] ?? 'columns') === 'inline_options') {
+          if (($settings['paper_format'] ?? 'columns') === 'single_column_inline') {
+            $questionsHtml .= '<div class="single-column-questions">' . implode('', $sectionQuestionBlocks) . '</div></div>';
+          } elseif (($settings['paper_format'] ?? 'columns') === 'inline_options') {
             $questionsHtml .= '<table class="section-question-columns" width="100%"><tr>'
               . '<td class="question-column">' . implode('', $leftBlocks) . '</td>'
               . '<td class="question-column">' . implode('', $rightBlocks) . '</td>'
@@ -273,8 +282,6 @@ class PdfService
           max(0, (float)($settings['margin_left'] ?? 8))
         );
         $headerHeight = max(0, min(300, (float)($settings['header_height'] ?? 80)));
-        $footerValue = array_key_exists('footer_text', $settings) ? (string)$settings['footer_text'] : 'End of Paper';
-        $footerText = htmlspecialchars($footerValue);
         $schoolNameHtml = $showSchoolName ? '<h1>' . $schoolNameEsc . '</h1>' : '';
 
         return <<<HTML
@@ -299,9 +306,10 @@ class PdfService
   .section-instructions { text-align: center; font-style: italic; margin-bottom: 5px; }
   .section-question-columns { border-collapse: separate; border-spacing: 18px 0; margin: 0 -18px; }
   .question-column { width: 50%; vertical-align: top; }
+  .single-column-question { display: block; }
+  .single-column-question .word-question-text { white-space: normal; }
   .inline-options { white-space: pre-wrap; tab-size: 4; }
   .inline-option { display: inline; margin-right: 1.5em; }
-  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8pt; color: #888; border-top: 1px solid #ddd; padding-top: 4px; }
 </style>
 </head>
 <body>
@@ -340,7 +348,6 @@ class PdfService
     {$questionsHtml}
   </div>
 
-  <div class="footer">{$footerText}</div>
 </body>
 </html>
 HTML;

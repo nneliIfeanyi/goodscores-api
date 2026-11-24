@@ -69,7 +69,6 @@ class School
             'show_logo' => true,
             'show_school_name' => true,
             'show_marks' => true,
-            'footer_text' => 'End of Paper',
         ];
     }
 
@@ -79,6 +78,7 @@ class School
         if (!$school) return false;
         $current = json_decode($school['paper_settings'] ?? '{}', true) ?: [];
         $merged = array_merge(self::defaultPaperSettings(), $current, $settings);
+        unset($merged['footer_text']);
         $db = Database::getInstance();
         $stmt = $db->prepare('UPDATE schools SET paper_settings = ? WHERE id = ?');
         return $stmt->execute([json_encode($merged), $schoolId]);

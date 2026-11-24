@@ -200,6 +200,13 @@ class SchoolController
                 }
                 $paperSettings['orientation'] = $orientation;
             }
+            if (isset($requested['paper_format'])) {
+                $paperFormat = (string)$requested['paper_format'];
+                if (!in_array($paperFormat, ['columns', 'inline_options', 'single_column_inline'], true)) {
+                    Response::error('Unsupported paper format');
+                }
+                $paperSettings['paper_format'] = $paperFormat;
+            }
             foreach (['margin_top', 'margin_bottom', 'margin_left', 'margin_right'] as $margin) {
                 if (isset($requested[$margin])) {
                     $value = (float)$requested[$margin];
@@ -211,9 +218,6 @@ class SchoolController
                 $headerHeight = (float)$requested['header_height'];
                 if ($headerHeight < 0 || $headerHeight > 300) Response::error('PDF header height must be between 0 and 300 px');
                 $paperSettings['header_height'] = $headerHeight;
-            }
-            if (array_key_exists('footer_text', $requested)) {
-                $paperSettings['footer_text'] = trim((string)$requested['footer_text']);
             }
             foreach (['show_logo', 'show_school_name'] as $toggle) {
                 if (array_key_exists($toggle, $requested)) {

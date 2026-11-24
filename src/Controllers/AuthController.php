@@ -399,7 +399,7 @@ class AuthController
             Response::error('MCQ options must be set to 3, 4, or 5');
         }
         $settings['mcq_option_count'] = (int)$settings['mcq_option_count'];
-        $settings['paper_format'] = in_array(($settings['paper_format'] ?? 'columns'), ['columns', 'inline_options'], true)
+        $settings['paper_format'] = in_array(($settings['paper_format'] ?? 'columns'), ['columns', 'inline_options', 'single_column_inline'], true)
             ? $settings['paper_format'] : 'columns';
         $settings['paper_size'] = in_array(strtoupper((string)($settings['paper_size'] ?? 'A4')), ['A4', 'LETTER', 'LEGAL'], true)
             ? strtoupper((string)$settings['paper_size']) : 'A4';
@@ -416,10 +416,6 @@ class AuthController
         foreach (['show_logo', 'show_school_name'] as $toggle) {
             $settings[$toggle] = filter_var($settings[$toggle] ?? true, FILTER_VALIDATE_BOOLEAN);
         }
-        $settings['footer_text'] = array_key_exists('footer_text', $settings)
-            ? trim((string)$settings['footer_text'])
-            : 'End of Paper';
-
         $settings['pdf_font_size'] = $fontSize;
         $settings['pdf_font_family'] = $fontFamily;
         $settings['show_marks'] = $showMarks === null ? true : $showMarks;
